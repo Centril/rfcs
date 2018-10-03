@@ -32,7 +32,7 @@ foo(
 );
 ```
 
-Additionally, regions quantified in `for<...>` are allowed outlives requirements.
+Additionally, lifetimes quantified in `for<...>` are allowed outlives requirements.
 
 # Motivation
 [motivation]: #motivation
@@ -132,15 +132,15 @@ fn foo(bar: impl for<'inner> Fn(&'inner u8) -> u8) {
 ```
 
 What `for<'inner> ... &'a inner u8` means is that `bar` works for *any* choice
-of region `'inner`. In other words, it doesn't matter what region you choose.
-By allowing any region it works just fine to pass `&x` to `bar` since `foo`
-can pick the region instead of the caller of `foo` picking it.
+of lifetime `'inner`. In other words, it doesn't matter what lifetime you choose.
+By allowing any lifetime it works just fine to pass `&x` to `bar` since `foo`
+can pick the lifetime instead of the caller of `foo` picking it.
 
 [lifetime elision]: https://doc.rust-lang.org/nomicon/lifetime-elision.html
 
 If you think about it, the desugaring in (4) is exactly the same as for
-*[lifetime elision]* in general. However, when elided regions are expanded
-for normal functions there is something to "hang" the region on
+*[lifetime elision]* in general. However, when elided lifetimes are expanded
+for normal functions there is something to "hang" the lifetime on
 (the parameters of the function). For example, if you write (5):
 
 ```rust
@@ -198,7 +198,7 @@ allow outlives requirements in `for<...>` and only deals with *trait bounds*.
 Henceforth in this RFC,
 we will refer to a higher-rank trait bound as a *"generic bound"*.
 What we've seen so far and what Rust currently supports are
-*region-generic* bounds (RGBs).
+*lifetime-generic* bounds (LGBs).
 
 This RFC aims to:
 
@@ -232,7 +232,7 @@ This RFC aims to:
 
     3. by inferring the most general type.
 
-## [Outlives requirements] in region-generic bounds
+## [Outlives requirements] in lifetime-generic bounds
 
 Consider the following, currently valid, program:
 
@@ -255,7 +255,7 @@ where
 In the definition of `Foo` we have specified the
 outlives requirements `'y: 'x` and `'z: 'y`.
 Thus, for `Foo<'x, 'y, 'z>` to be a valid (well-formed) type, these requirements
-must hold for any regions we substitute for `'x`, `'y`, and `'z`.
+must hold for any lifetimes we substitute for `'x`, `'y`, and `'z`.
 
 However, in the `where` *constraint* `F: for<'b, 'c> Fn(Foo<'a, 'b, 'c>)`
 we have specified no such requirement that `'b: 'a` and `'c: 'b` but yet the
@@ -274,7 +274,7 @@ error: lifetime bounds cannot be used in this context
 Here, the aim of the RFC is to change this so that `for<'b: 'a, 'c: 'b>`
 becomes legal and so the error message will no longer be emitted when using
 `for<...>` this way. When you write a requirement such as `'b: 'a`,
-the region `'a` must as always be in scope. The construct `for<...>` is no
+the lifetime `'a` must as always be in scope. The construct `for<...>` is no
 different in this respect. However, in this RFC, we provide no means to encode
 the reverse requirement that `'a: 'b` when writing `for<'b> ...`.
 
@@ -368,7 +368,7 @@ However, in this case, we had to *invent a new trait* and we can't make use of
 closures or other `fn` definitions. The solution is not particularly ergonomic.
 
 So how do we solve this instead? The same way we solved the issues with
-regions that we discussed in the [background]. The trick here is to ensure
+lifetimes that we discussed in the [background]. The trick here is to ensure
 that `F` works with *any* type `T` that `debug_a_few_things_2` wants to use
 within certain bounds. In current Rust, there is no way to formulate such a
 condition. Thus, this RFC proposes such a mechanism. To do so, we write:
@@ -592,12 +592,12 @@ let h: impl for<const N: usize> Fn([u8; N]) -> [u8; N]
 
 let i: impl for<'a> Fn(&'a u8) -> &'a u8 = for<'a> |x: &'a u8| x;
 //                                         ---------------------
-//                                         regions also work
+//                                         lifetimes also work
 
 let j: impl for<'a, T: 'a, const N: usize> Fn(&'a [T; N]) -> &'a [T; N]
      = for<'a, T: 'a, const N: usize> |x: &'a [T; N]| x;    
 //     ------------------------------------------------
-//     regions, types and const generics quantified together.
+//     lifetimes, types and const generics quantified together.
 //     We can optionally drop `T: 'a` and just write `T` because the
 //     outlives requirement is implied by `&'a [T; N]`.
 ```
@@ -678,7 +678,7 @@ A constraint has the kind `Constraint`.
 An example of a constraint is `T: Copy + 'a` where `Copy + 'a` is a *bound*.
 
 A bound has the kind `k0 -> Constraint` where `k0 : ' | * ;` is a base kind.
-Here `'` is the kind of regions (otherwise referred to as "lifetimes"),
+Here `'` is the kind of lifetimes (otherwise referred to as "regions"),
 e.g. `'a` and `'static`. Here, `*` is the kind of types, e.g. `Vec<bool>`.
 Note that `Vec` is a type constructor of kind `* -> *` and *not* a type.
 
@@ -698,7 +698,7 @@ list1<p, s> : p (s p)* ;
 list_1_term<p, s> : list1<p, s> s? ;
 
 for_binders : "for" "<" (binders ","?)? ">" ;
-binders : regions | regions "," tail_vars | tail_vars ;
+binders : lifetimes | lifetimes "," tail_vars | tail_vars ;
 tail_vars : list1<tail_var, ","> ;
 tail_var : const_generic | tyvar_and_bounds ;
 
@@ -706,15 +706,15 @@ const_generic : "const" ident ":" ty ; // Depends on RFC 2000 (const generics)
 
 bounds<bound> : ":" list_1_term<bound, "+">? ;
 
-regions : list1<region_var, ","> ;
-region_var : region bounds<region> ;
-region : REGION | "'static" ;
+lifetimes : list1<lifetime_var, ","> ;
+lifetime_var : lifetime bounds<lifetime> ;
+lifetime : LIFETIME | "'static" ;
 
 tyvar_and_bounds : ident bounds<tyvar_bound> ? ;
 tyvar_bound : "?"? for_binders? bound ;
 ```
 
-Here `REGION` refers to the token representing a region.
+Here `LIFETIME` refers to the token representing a lifetime.
 
 We change the grammar of expressions from:
 
@@ -744,9 +744,9 @@ the static semantics of desugaring to `<T>` and `where T: B0 + ... + Bn`.
 This also applies to `arg: impl for<...> Trait<...>` as well as
 `-> impl for<...> Trait<...>`.
 
-### The `'static` region cannot be quantified
+### The `'static` lifetime cannot be quantified
 
-While `'static` *is* permitted in the grammar of `regions` above because
+While `'static` *is* permitted in the grammar of `lifetimes` above because
 the `item` macro fragment matcher allows it, but the compiler will also
 disallow it to be quantified after parsing. This RFC does not introduce the
 ability to write `for<'static>` syntactically since it is already permitted
@@ -758,64 +758,65 @@ on introducing shadowed parameter names where `'static` exists in the
 ### Outlives requirements in `for<...>`
 
 A `for<...>` binder inside a bound or a constraint may contain a list of
-regions `R0`...`Rn` (`regions` in concrete syntax) adhering to the grammar
-`region_var`. As examples, a Rust compiler will accept a type of form
+lifetimes `L0`...`Ln` (`lifetimes` in concrete syntax) adhering to the grammar
+`lifetime_var`. As examples, a Rust compiler will accept a type of form
 `Box<dyn for<'b: 'a> Fn(&'b u8)>`, a type of form `for<'b: 'a> fn(&'b u8)`,
 a constraint `for<'b, 'c> &'b &'c T: Debug`, or a bound `T: for<'a> MyTrait<'a>`.
 
-None of the regions `Ri` may shadow any named and quantified regions in any
-ancestor scope. The regions `Ri` may each optionally contain a `+`-separated
-(or terminated) list of regions `Rij` each of which the region `Ri` must outlive
-(by outlive we mean `≥` rather than `>`). Any referenced regions `Rij` must be
-either be `'static` or must have been brought into scope in an ancestor scope.
+None of the lifetimes `Li` may shadow any named and quantified lifetimes
+in any ancestor scope. The lifetimes `Li` may each optionally contain
+a `+`-separated (or terminated) list of lifetimes `Lij` each of which
+the lifetime `Li` must outlive (by outlive we mean `≥` rather than `>`).
+Any referenced lifetimes `Lij` must be either be `'static` or must have
+been brought into scope in an ancestor scope.
 
-Given a binder `for<R0: R0j, ..., Rn: Rnj> $bound` in set of constraints on a
+Given a binder `for<L0: L0j, ..., Ln: Lnj> $bound` in set of constraints on a
 definition `$def` (including `struct`, `enum`, `union`, `fn`, `trait`, or `impl`),
 for a reference to `$def` to be well-formed (for an implementation this means
 that this is a requirement for it to be considered implemented),
-for each region `Ri`, `$bound` must hold for any arbitrary region
-which outlives a set of regions `⊆ Rij`. This entails that a reference to
-`$def` may not impose an additional set of outlives requirements on `Ri` but
+for each lifetime `Li`, `$bound` must hold for any arbitrary lifetime
+which outlives a set of lifetimes `⊆ Lij`. This entails that a reference to
+`$def` may not impose an additional set of outlives requirements on `Li` but
 may weaken the set of requirements. For example, if `for<'b> Foo<'b>` holds
 then so too will `for<'b: 'a> Foo<'b>`.
 
-Conversely, inside `$def`, for each region `Ri`, the `$bound` is considered
-to hold for any arbitrary region which at least outlive all regions `Rij`.
+Conversely, inside `$def`, for each lifetime `Li`, the `$bound` is considered
+to hold for any arbitrary lifetime which at least outlive all lifetimes `Lij`.
 
 In all cases, the implied bounds of `$bound` will be taken into account when
-determining the full set of outlives requirements that apply to regions `Ri`.
+determining the full set of outlives requirements that apply to lifetimes `Li`.
 For example, if given the constraint `for<'a> &'a &'b u8: $bound` then
 `'b: 'a` is implied.
 
-Where a value of a type of form `dyn for<R0: R0j, ..., Rn: Rnj> $bound`
-or of form `for<R0: R0j, ..., Rn: Rnj> fn($ty_arg_0, ..., $ty_arg_n) -> $ty_ret`,
+Where a value of a type of form `dyn for<L0: L0j, ..., Ln: Lnj> $bound`
+or of form `for<L0: L0j, ..., Ln: Lnj> fn($ty_arg_0, ..., $ty_arg_n) -> $ty_ret`,
 is required, the compiler will check that the bound `for<...> $bound` holds
 according to the logic above and conversely once a value of such a type
 is obtained, the bound `for<...> $bound` may be assumed to hold.
 
-In chalk terms, a constraint `for<R0, ..., Rn> $type: $bound`
+In chalk terms, a constraint `for<L0, ..., Ln> $type: $bound`
 is lowered into logic like so:
 
 ```rust
-forall<R0, .., Rn> {
+forall<L0, .., Ln> {
     if(
-        Outlives(R0: R00) && .. Outlives(R0: R0m) &&
+        Outlives(L0: L00) && .. Outlives(L0: L0m) &&
         ..
-        Outlives(Rn: Rn0) && .. Outlives(Rn: Rnm)
+        Outlives(Ln: Ln0) && .. Outlives(Ln: Lnm)
     ) {
         $type: $bound
     }
 }
 ```
 
-Here, `$type` may refer to any of the regions `Ri`.
-Meanwhile, a constraint `$type: for<R0, ..., Rn> $bound` is lowered
-the same way but `$type` may not reference any `Ri`.
+Here, `$type` may refer to any of the lifetimes `Li`.
+Meanwhile, a constraint `$type: for<L0, ..., Ln> $bound` is lowered
+the same way but `$type` may not reference any `Li`.
 
 ### `dyn for<P0...Pn>` is not allowed type / `const` parameters
 
 *After* macro expansion, a Rust compiler will emit an error if the bound after
-`dyn` contains `for<$params>` where `$params` does not match `regions ","?`.
+`dyn` contains `for<$params>` where `$params` does not match `lifetimes ","?`.
 Do note that this still means that `dyn for<T> $bound` *is* part of the grammar
 because of the significance of macros in Rust. The same applies to types.
 While `for<T> fn(T)` is a syntactically valid type, it is not semantically
@@ -824,7 +825,7 @@ valid and thus it is not well-formed.
 ### Type-generic bounds and constraints
 
 While the restrictions in the previous section wrt. `dyn` applies,
-similar to regions, a `for<...>` binder inside a bound or a constraint
+similar to lifetimes, a `for<...>` binder inside a bound or a constraint
 may contain a list of type variables `T0...Tn` where each variable `Ti`
 adheres to the grammar `tyvar_and_bounds`. For example, a Rust compiler
 will accept a constraint `for<T: Debug> Vec<T>: Debug`, or a constraint
@@ -832,8 +833,8 @@ will accept a constraint `for<T: Debug> Vec<T>: Debug`, or a constraint
 
 A variable `Ti`, which may not shadow variables in parent scopes, may optionally
 contain a `+`-separated (or terminated) list of bounds `Tij` which can either be:
-+ a region brought into scope in some parent scope or in the same binder
-  or the `'static` region.
++ a lifetime brought into scope in some parent scope or in the same binder
+  or the `'static` lifetime.
 + a reference to a trait, e.g. `Ti: Debug`
 + another bound of form `for<...> $bound`
 
@@ -842,7 +843,7 @@ definition `$def` (including `struct`, `enum`, `union`, `fn`, `trait`, or `impl`
 for a reference to `$def` to be well-formed (for an implementation this means
 that this is a requirement for it to be considered implemented), for each type
 variable `Ti`, `$bound` must hold for any arbitrary type for which a set
-of bounds `⊆ Tij` holds. Just as with region variables, this entails that a
+of bounds `⊆ Tij` holds. Just as with lifetime variables, this entails that a
 reference to `$def` may not impose an additional set of constraints on `Ti` but
 may weaken the set of requirements. For example, if `for<T> Foo<T>` holds
 then so too will `for<T: Debug> Foo<'b>`.
@@ -852,7 +853,7 @@ to hold for any arbitrary type for which at least all bounds `Tij` holds.
 In particular, this means that an arbitrary type may satisfy more bounds
 than the set in `Tij` but not fewer.
 
-As with regions, the implied bounds of `$bound` will be taken into account
+As with lifetimes, the implied bounds of `$bound` will be taken into account
 when determining the full set of constraints on `Ti`. For example, if given
 the constraint `for<'a, T> Foo<&'a T>` then `T: 'a` is implied.
 
@@ -898,7 +899,7 @@ form `const C0: τ0, ..., const Cn: τn`. The semantics of what such a variable
 means is given by [RFC 2000]. These variables `Ci` do not have to be placed
 together contiguously and may be mixed in any order with type variables,
 described in the previous section, `T0...Tn`. However, just like type variables,
-`Ci` must come before any region variables.
+`Ci` must come before any lifetime variable.
 
 Most of the logic with respect to type variables applies to const-variables as
 well. The notable difference here is that there is no way to bound a value
@@ -912,18 +913,18 @@ Implied bounds apply for `const` variables as well. For example, if you write:
 
 Let:
 
-+ `Ri` denote the `i`th quantified region variable (`region_var`).
++ `Li` denote the `i`th quantified lifetime variable (`lifetime_var`).
 
-  There may be zero or more region variables.
+  There may be zero or more lifetime variables.
 
 + `Pi` denote the `i`th quantified type variable (`tyvar_and_bounds`)
   or const value variable (`const_generic`).
 
   There may be zero or more such variables.
 
-  Note that for both `Pi` and `Ri` only the variables in the *immediate*
+  Note that for both `Pi` and `Li` only the variables in the *immediate*
   `for<...>` binder is included. Variables in nested `for<...>` are not
-  part of `Pi` and `Ri`.
+  part of `Pi` and `Li`.
 
 + `xi`, denote a pattern which is a parameter of a closure
   including an optional type `Ti` if it is specified.
@@ -935,7 +936,7 @@ Let:
 When type checking a closure of the following form in abstract syntax:
 
 ```rust
-move? for<R0, ... Rn, P0, ..., Pn> |x0, xi, xn| -> Tr { body_expr }
+move? for<L0, ... Ln, P0, ..., Pn> |x0, xi, xn| -> Tr { body_expr }
 ```
 
 The following steps, which may be reordered if the semantics are preserved,
@@ -943,11 +944,11 @@ are taken:
 
 1. A new environment `Γc` is added.
 
-2. All `Ri` are added to `Γc` and noted as untouchable variables.
+2. All `Li` are added to `Γc` and noted as untouchable variables.
 
 3. All `Pi` are added to `Γc` and noted as untouchable variables.
 
-   By untouchable, we here mean that a variable `Pi` or `Ri` is
+   By untouchable, we here mean that a variable `Pi` or `Li` is
    not a unification variable since it originaltes from an explicitly
    given signature and thus it cannot be instantiated at a different type.
 
@@ -982,12 +983,12 @@ are taken:
    attempted with the expression `body_expr`.
 
    During unification, some variables may be substituted for known values
-   or partially known values, including `Ri` and `Pi`.
+   or partially known values, including `Li` and `Pi`.
    When doing so, additional variables may be introduced where needed.
 
    Additionally, during unification, additional constraints discovered
    for `body_expr` to be well formed may be added to `Γc`.
-   These constraints may reference variables `Ri` or `Pi`.
+   These constraints may reference variables `Li` or `Pi`.
 
 10. Having unified with `body_expr`, all remaining unification variables in `Γc`
     are substituted for fresh variables in `Γc`.
@@ -1094,7 +1095,7 @@ then the syntax `impl<T> MyTrait<T>` can be used as a type to denote a type
 which must satisfy `MyTrait<T>` for all `T`. This correspondence in between
 implementation syntax and type syntax could be a boon for learnability.
 
-Similarly, we could allow regions to be quantified in `dyn` as:
+Similarly, we could allow lifetimes to be quantified in `dyn` as:
 `Box<dyn<'a> Fn(&'a u8)>`.
 
 ## `impl Fn(impl Debug)`
@@ -1145,7 +1146,7 @@ forall<T> {
 ## Denoting *"reverse constraints"* in `for<...>`
 
 In this RFC we have not introduced any mechanism to bound type variables
-and regions quantified in `for<...>` with so called *"reverse constraints"*.
+and lifetimes quantified in `for<...>` with so called *"reverse constraints"*.
 An example of a reverse constraints is:
 
 ```rust
