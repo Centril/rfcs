@@ -1,20 +1,22 @@
 - Feature Name: `uniform_generic_bounds`
-- Start Date: 2018-09-26
+- Start Date: 2018-10-03
 - RFC PR: _
 - Rust Issue: _
 
 # Summary
 [summary]: #summary
 
-Extends universal quantification (generics) in bounds with `for<..>` to
-types and `const` values except for in `dyn` contexts.
+TODO improve this section.
+
+Extends universal quantification (generics) in bounds with
+`for<...>` to types and `const` values except for in `dyn` contexts.
 As a consequence, closures can now be polymorphic on types and `const` values.
 In other words, you can now write:
 
 ```rust
 fn foo<F>(bar: F, baz: impl for<const N: usize> Fn([u8; N]))
 where
-    F: for<T> Fn(T) -> usize,
+    F: for<'a, T> Fn(&'a T) -> usize,
 {
     bar(1u8) + bar(2u16);
 
@@ -22,26 +24,46 @@ where
     baz([1, 2, 3])
 }
 
+fn bar()
+
 foo(
-    std::mem::size_of,
+    std::mem::size_of_val,
     |arr| println!("{:#?}", arr)
 );
 ```
 
-//TODO
-Additionally, you may also now write `for<'a: 'b> `
+Additionally, regions quantified in `for<...>` are allowed outlives requirements.
 
 # Motivation
 [motivation]: #motivation
 
+TODO
+
+- some motivation in rationale.
+
 ## Extending HRTBs to types improves understanding
+
+TODO
 
 ## Use cases
 
+TODO
+
 ### Generic closures
+
+TODO
+
+### Instead of boilerplate
+
+TODO
 
 ### Scrap your boilerplate
 
+TODO
+
+## In-language encodings helps communication
+
+TODO
 
 # Guide-level explanation
 [guide-level-explanation]: #guide-level-explanation
@@ -110,28 +132,28 @@ fn foo(bar: impl for<'inner> Fn(&'inner u8) -> u8) {
 ```
 
 What `for<'inner> ... &'a inner u8` means is that `bar` works for *any* choice
-of lifetime `'inner`. In other words, it doesn't matter what lifetime you choose.
-By allowing any lifetime it works just fine to pass `&x` to `bar` since `foo`
-can pick the lifetime instead of the caller of `foo` picking it.
+of region `'inner`. In other words, it doesn't matter what region you choose.
+By allowing any region it works just fine to pass `&x` to `bar` since `foo`
+can pick the region instead of the caller of `foo` picking it.
 
 [lifetime elision]: https://doc.rust-lang.org/nomicon/lifetime-elision.html
 
 If you think about it, the desugaring in (4) is exactly the same as for
-*[lifetime elision]* in general. However, when elided lifetimes are expanded
-for normal functions there is something to "hang" the lifetime on
+*[lifetime elision]* in general. However, when elided regions are expanded
+for normal functions there is something to "hang" the region on
 (the parameters of the function). For example, if you write (5):
 
 ```rust
-fn quux(x: &u8) -> (&u8, &u8) { .. }
+fn quux(x: &u8) -> (&u8, &u8) { ... }
 ```
 
 The compiler will desugar (5) to (6):
 
 ```rust
-fn quux<'a>(x: &'a u8) -> (&'a u8, &'a u8) { .. }
+fn quux<'a>(x: &'a u8) -> (&'a u8, &'a u8) { ... }
 ```
 
-In the case of (4) however, we need to add `for<..>` to hang the `'inner` on.
+In the case of (4) however, we need to add `for<...>` to hang the `'inner` on.
 
 [rank-1 polymorphism]: https://en.wikipedia.org/wiki/Parametric_polymorphism#Rank-1_(prenex)_polymorphism
 
@@ -168,15 +190,15 @@ fn foo(bar: for<'inner> fn(&'inner u8) -> u8) -> u8 {
 ```
 
 However, in this case, there is no bound to talk of.
-This RFC proposes no extension to higher ranked types and only deals with bounds.
+This RFC proposes no extension to higher ranked *types* other than to
+allow outlives requirements in `for<...>` and only deals with *trait bounds*.
 
 ## Overview of the proposal
 
-Henceforth in this RFC, to use a more approchable,
-and less jargon-packed terminology,
+Henceforth in this RFC,
 we will refer to a higher-rank trait bound as a *"generic bound"*.
 What we've seen so far and what Rust currently supports are
-*lifetime-generic* bounds (LGBs).
+*region-generic* bounds (RGBs).
 
 This RFC aims to:
 
@@ -185,8 +207,10 @@ This RFC aims to:
 [outlives requirements]: https://github.com/rust-lang/rfcs/blob/master/text/2093-infer-outlives.md#motivation
 [const-generic]: https://github.com/rust-lang/rfcs/pull/2000
 [implied bounds]: https://github.com/rust-lang/rfcs/pull/2089
+[RFC 2071]: https://github.com/rust-lang/rfcs/pull/2071
+[RFC 2515]: https://github.com/rust-lang/rfcs/pull/2515
 
-1. allow LGBs to optionally contain explicit *[outlives requirements]*
+1. allow RGBs to optionally contain explicit *[outlives requirements]*
    in the form `F: for<'b: 'a> Fn(Thing<'b>)`.
 
 2. introduce *type-generic* bounds (TGBs) of the form `F: for<T> Fn(Vec<T>)`.
@@ -196,7 +220,19 @@ This RFC aims to:
 3. introduce *[const-generic]* bounds (CGBs) of the form
    `F: for<const N: usize> Fn([u8; N])`.
 
-## [Outlives requirements] in lifetime-generic bounds
+4. allow closures to be generic over types and `const` values.
+
+    1. with explicit quantification of generic parameters
+       using `for<...> |args...| ...`.
+
+    2. with implicit quantification of generic parameters
+       using `|x: impl Trait| ...`.
+       Subject to stabilization of [RFC 2071] or [RFC 2515] `impl Trait`
+       is also permitted in the explicit return type of a closure.
+
+    3. by inferring the most general type.
+
+## [Outlives requirements] in region-generic bounds
 
 Consider the following, currently valid, program:
 
@@ -219,7 +255,7 @@ where
 In the definition of `Foo` we have specified the
 outlives requirements `'y: 'x` and `'z: 'y`.
 Thus, for `Foo<'x, 'y, 'z>` to be a valid (well-formed) type, these requirements
-must hold for any lifetimes we substitute for `'x`, `'y`, and `'z`.
+must hold for any regions we substitute for `'x`, `'y`, and `'z`.
 
 However, in the `where` *constraint* `F: for<'b, 'c> Fn(Foo<'a, 'b, 'c>)`
 we have specified no such requirement that `'b: 'a` and `'c: 'b` but yet the
@@ -237,13 +273,13 @@ error: lifetime bounds cannot be used in this context
 
 Here, the aim of the RFC is to change this so that `for<'b: 'a, 'c: 'b>`
 becomes legal and so the error message will no longer be emitted when using
-`for<..>` this way. When you write a requirement such as `'b: 'a`, the lifetime
-`'a` must as always be in scope. The construct `for<..>` is no different in this
-respect. However, in this RFC, we provide no means to encode the reverse
-requirement that `'a: 'b` when writing `for<'b> ...`.
+`for<...>` this way. When you write a requirement such as `'b: 'a`,
+the region `'a` must as always be in scope. The construct `for<...>` is no
+different in this respect. However, in this RFC, we provide no means to encode
+the reverse requirement that `'a: 'b` when writing `for<'b> ...`.
 
 The lifted restriction does not only apply in `fn` contexts but generally
-anywhere `for<..>` can occur. This includes `where` clauses, in bounds applied
+anywhere `for<...>` can occur. This includes `where` clauses, in bounds applied
 to `dyn` and `impl`, and anywhere type parameter lists may occur which includes
 `impl`, `fn`, `struct`, `enum`, `union`, and `type`.
 
@@ -328,11 +364,11 @@ where
 }
 ```
 
-However, in this case, we had to invent a new trait and we can't make use of
+However, in this case, we had to *invent a new trait* and we can't make use of
 closures or other `fn` definitions. The solution is not particularly ergonomic.
 
 So how do we solve this instead? The same way we solved the issues with
-lifetimes that we discussed in the [background]. The trick here is to ensure
+regions that we discussed in the [background]. The trick here is to ensure
 that `F` works with *any* type `T` that `debug_a_few_things_2` wants to use
 within certain bounds. In current Rust, there is no way to formulate such a
 condition. Thus, this RFC proposes such a mechanism. To do so, we write:
@@ -404,10 +440,28 @@ fn main() {
 ```
 
 The distinction between weaker and stronger here has to do with what is
-more / less polymorphic. TODO covariance / contravariance, positive / negative
-position.
+more / less polymorphic.
 
-TODO notes about rank-3
+It is also possible to expect a polymorphic function that itself expects a
+polymorphic function. For example, we can write:
+
+```rust
+fn rank_3_function<G>(rank_2_fun: G)
+where
+    G: for<F: for<T: fmt::Debug> Fn(T)> Fn(F)
+{
+    rank_2_fun(send_messages_to_mars); // OK!
+
+    rank_2_fun(|x: u8| {
+        //         ^^ ERROR! `rank_2_fun` expects a *polymorphic* function.
+        println!("x = {:#?}", x)
+    });
+}
+
+fn main() {
+    rank_3_function(debug_a_few_things_4);
+}
+```
 
 ### In `impl Trait`
 
@@ -463,47 +517,511 @@ L | fn object_unsafe_safe(_: Box<dyn ObjectUnsafe>) {}
 
 As we can see, the compiler will not allow any trait with type parameters to
 be used in `dyn Trait`. The reason why is because when the compiler attempts
-to generate a vtable, it would have to contain generic function pointers,
-which is impossible or it would have to possibly contain an unbounded number
-of function pointers for each type the type parameter could be instantiatied at.
+to generate a vtable, it would have to contain generic function pointers.
+This is generally not possible or it would have to possibly contain
+an unbounded number of function pointers for each type the type
+parameter could be instantiatied at which is infeasible.
 
 ## Const-generic bounds
 
-TODO
+[RFC 2000]: https://github.com/rust-lang/rfcs/pull/2000
+[dependent products]: https://ncatlab.org/nlab/show/dependent%2Bproduct%2Btype
+[dependent types]: https://en.wikipedia.org/wiki/Dependent_type
+
+[RFC 2000] introduced *"const generics"* which let you be polymorphic
+over *values* known at compile time. This amounts to a restricted form
+of [dependent products] / Π-types (see: value-[dependent types]).
+
+With const generics, we can define a function which works on arrays of any size:
+
+```rust
+fn sum_array<const N: usize>(array: [u8; N]) -> u8 {
+    array.iter().sum()
+}
+```
+
+However, as with types, we can't readily accept a function that is polymorphic
+over constant values unless we also invent a trait:
+
+```rust
+trait ConstPolyFn {
+    fn call<const N: usize>() -> u8;
+}
+```
+
+We propose a more scalable and ergonomic mechanism instead:
+
+```rust
+fn foo<F>(accepts_matrix: F)
+where
+    F: for<const N: usize, const M: usize> Fn([[u8; N]; M])
+{
+    accepts_matrix([] : [[u8; 0]; 0]);
+    accepts_matrix([[1]] : [[u8; 1]; 1]);
+    accepts_matrix([[1, 2], [3, 4], [5, 6]] : [[u8; 2]; 3]);
+}
+```
+
+As you can see, `accepts_matrix` works with matrices of all sizes.
 
 ## Generic closures
 
-TODO
+Hitherto in this RFC we have mainly seen `fn`s being passed to places where
+polymorphic functions are expected. However, in the [summary], we did see an
+example of a type-polymorphic *closure* being passed. This RFC proposes that
+you should be able to construct such closures. We propose both an explicit
+and an inferred way to construct polymorphic closures.
+
+### Explicitly quantified
+
+Closures can now be explicitly denoted as being polymorphic:
+
+```rust
+let f: impl for<T> Fn(T) -> T = for<T> |x: T| -> T { x };
+//                              ------------------------
+//                              fully explicit
+
+let g: impl for<T> Fn(T) -> T = for<T> |x: T| x;
+//                              ---------------
+//                              return type is inferred
+
+let h: impl for<const N: usize> Fn([u8; N]) -> [u8; N]
+     = for<const N: usize> |x: [u8; N]| x;
+//     ----------------------------------
+//     we can quantify a const value
+
+let i: impl for<'a> Fn(&'a u8) -> &'a u8 = for<'a> |x: &'a u8| x;
+//                                         ---------------------
+//                                         regions also work
+
+let j: impl for<'a, T: 'a, const N: usize> Fn(&'a [T; N]) -> &'a [T; N]
+     = for<'a, T: 'a, const N: usize> |x: &'a [T; N]| x;    
+//     ------------------------------------------------
+//     regions, types and const generics quantified together.
+//     We can optionally drop `T: 'a` and just write `T` because the
+//     outlives requirement is implied by `&'a [T; N]`.
+```
+
+All of the closures above are identity functions that are polymorphic to
+varying degrees with `for<T> |x: T| -> T { x }` being most polymorphic.
+
+### Implicitly quantified
+
+Just like functions can use `impl Trait` in argument position
+so too can closures now with equivalent meaning.
+For example, we can write:
+
+```rust
+let f = |x: impl Debug| println!("the value of x is: {:#?}", x);
+```
+
+The closure `f` will satisfy the bound `for<T: Debug> Fn(T)`.
+Just as with functions, each occurence of `impl Debug` will
+become a unique type parameter in `for<...>`.
+
+To further enhance the conistency with `fn` items,
+closures can also annotate the return type with `-> impl Trait`
+with the same type-hiding semantics as in `fn`.
+For example, we can write:
+
+```rust
+let g: impl Fn(u8) -> impl Iterator<Item = u8>
+                   // ^^^^ Allowed as the return type of Fn(...)
+     = |x: u8| -> impl Iterator<Item = u8> { 0..=x };
+```
+
+As noted in the overview, `impl Trait` as the return type of
+`Fn`, `FnMut`, and `FnOnce` traits as well as closures depends
+on the the outcome of [RFC 2071] and [RFC 2515].
 
 ### Inferred
 
-TODO
+In all of the cases above except `f`,
+we can also drop the quantifiers `for<...>` and write:
 
-### Explicit
+```rust
+let g = |x| x;
 
-TODO
+let h = |x: [_; _]| x;
 
+let i = |x: &u8| x;
 
+let j = |x: &[_; _]| x;
+```
 
+In all of these cases, the compiler infers the most general type that can be
+assigned to the closures. Here, `h`, `i`, and `j` can't be more polymorphic
+than the signatures we gave in the previous section because we have
+intentionally constrained them to. However, the compiler will infer
+the most general type for any closure. For example, if we write:
 
+```rust
+let adder = |x| x + x;
+```
 
+then:
 
-Explain the proposal as if it was already included in the language and you were teaching it to another Rust programmer. That generally means:
+```rust
+add_to_self : impl for<T: Copy + Add> Fn(T) -> <T as Add>::Output
+```
 
-- Explaining the feature largely in terms of examples.
-- Explaining how Rust programmers should *think* about the feature, and how it should impact the way they use Rust. It should explain the impact as concretely as possible.
-- If applicable, provide sample error messages, deprecation warnings, or migration guidance.
-- If applicable, describe the differences between teaching this to existing Rust programmers and new Rust programmers.
-
-For implementation-oriented RFCs (e.g. for compiler internals), this section should focus on how compiler contributors should think about the change, and give examples of its concrete impact. For policy RFCs, this section should provide an example-driven introduction to the policy, and explain its impact in concrete terms.
+will hold.
 
 # Reference-level explanation
 [reference-level-explanation]: #reference-level-explanation
 
-TODO
+A `where` clause contains a comma separated list of *constraints*
+(also referred to as *"predicates"*). A list of constraints is also
+referred to as an *axiom set*. A constraint is either a *goal* to be proven,
+or a *clause* which is a proof/witness that a constraint holds.
+A constraint has the kind `Constraint`.
+An example of a constraint is `T: Copy + 'a` where `Copy + 'a` is a *bound*.
+
+A bound has the kind `k0 -> Constraint` where `k0 : ' | * ;` is a base kind.
+Here `'` is the kind of regions (otherwise referred to as "lifetimes"),
+e.g. `'a` and `'static`. Here, `*` is the kind of types, e.g. `Vec<bool>`.
+Note that `Vec` is a type constructor of kind `* -> *` and *not* a type.
+
+In a `where` clause, a constraint of form `for<P0, ..., Pn> Type: Bound`
+where `Type` or `Bound` references at least one of `P0...Pn` is referred
+to as a *generic constraint*.
+
+If instead a `for<P0, ..., Pn>` binder is on the RHS of `:`, that is inside
+of `Bound` it is instead referred to as a *generic bound*.
+
+## Grammar
+
+We change the grammar of places where `for<...>` is permitted to:
+
+```rust
+list1<p, s> : p (s p)* ;
+list_1_term<p, s> : list1<p, s> s? ;
+
+for_binders : "for" "<" (binders ","?)? ">" ;
+binders : regions | regions "," tail_vars | tail_vars ;
+tail_vars : list1<tail_var, ","> ;
+tail_var : const_generic | tyvar_and_bounds ;
+
+const_generic : "const" ident ":" ty ; // Depends on RFC 2000 (const generics)
+
+bounds<bound> : ":" list_1_term<bound, "+">? ;
+
+regions : list1<region_var, ","> ;
+region_var : region bounds<region> ;
+region : REGION | "'static" ;
+
+tyvar_and_bounds : ident bounds<tyvar_bound> ? ;
+tyvar_bound : "?"? for_binders? bound ;
+```
+
+Here `REGION` refers to the token representing a region.
+
+We change the grammar of expressions from:
+
+```rust
+expr
+: ...
+| lambda_expr
+| "move" lambda_expr
+;
+```
+
+to:
+
+```rust
+expr
+: ...
+| for_binders? lambda_expr
+| "move" for_binders? lambda_expr
+;
+```
+
+## Static semantics
+
+In this RFC, the static semantics of a generic binder `T` with any set of bounds
+`B0 + ... + Bn` applied to it (`<T: B0 + ... + Bn>`) is explained in terms of
+the static semantics of desugaring to `<T>` and `where T: B0 + ... + Bn`.
+This also applies to `arg: impl for<...> Trait<...>` as well as
+`-> impl for<...> Trait<...>`.
+
+### The `'static` region cannot be quantified
+
+While `'static` *is* permitted in the grammar of `regions` above because
+the `item` macro fragment matcher allows it, but the compiler will also
+disallow it to be quantified after parsing. This RFC does not introduce the
+ability to write `for<'static>` syntactically since it is already permitted
+in stable compilers of Rust, but we take the opportunity to clarify here.
+The restriction on quantifying `'static` can be seen as a restriction
+on introducing shadowed parameter names where `'static` exists in the
+"global" scope.
+
+### Outlives requirements in `for<...>`
+
+A `for<...>` binder inside a bound or a constraint may contain a list of
+regions `R0`...`Rn` (`regions` in concrete syntax) adhering to the grammar
+`region_var`. As examples, a Rust compiler will accept a type of form
+`Box<dyn for<'b: 'a> Fn(&'b u8)>`, a type of form `for<'b: 'a> fn(&'b u8)`,
+a constraint `for<'b, 'c> &'b &'c T: Debug`, or a bound `T: for<'a> MyTrait<'a>`.
+
+None of the regions `Ri` may shadow any named and quantified regions in any
+ancestor scope. The regions `Ri` may each optionally contain a `+`-separated
+(or terminated) list of regions `Rij` each of which the region `Ri` must outlive
+(by outlive we mean `≥` rather than `>`). Any referenced regions `Rij` must be
+either be `'static` or must have been brought into scope in an ancestor scope.
+
+Given a binder `for<R0: R0j, ..., Rn: Rnj> $bound` in set of constraints on a
+definition `$def` (including `struct`, `enum`, `union`, `fn`, `trait`, or `impl`),
+for a reference to `$def` to be well-formed (for an implementation this means
+that this is a requirement for it to be considered implemented),
+for each region `Ri`, `$bound` must hold for any arbitrary region
+which outlives a set of regions `⊆ Rij`. This entails that a reference to
+`$def` may not impose an additional set of outlives requirements on `Ri` but
+may weaken the set of requirements. For example, if `for<'b> Foo<'b>` holds
+then so too will `for<'b: 'a> Foo<'b>`.
+
+Conversely, inside `$def`, for each region `Ri`, the `$bound` is considered
+to hold for any arbitrary region which at least outlive all regions `Rij`.
+
+In all cases, the implied bounds of `$bound` will be taken into account when
+determining the full set of outlives requirements that apply to regions `Ri`.
+For example, if given the constraint `for<'a> &'a &'b u8: $bound` then
+`'b: 'a` is implied.
+
+Where a value of a type of form `dyn for<R0: R0j, ..., Rn: Rnj> $bound`
+or of form `for<R0: R0j, ..., Rn: Rnj> fn($ty_arg_0, ..., $ty_arg_n) -> $ty_ret`,
+is required, the compiler will check that the bound `for<...> $bound` holds
+according to the logic above and conversely once a value of such a type
+is obtained, the bound `for<...> $bound` may be assumed to hold.
+
+In chalk terms, a constraint `for<R0, ..., Rn> $type: $bound`
+is lowered into logic like so:
+
+```rust
+forall<R0, .., Rn> {
+    if(
+        Outlives(R0: R00) && .. Outlives(R0: R0m) &&
+        ..
+        Outlives(Rn: Rn0) && .. Outlives(Rn: Rnm)
+    ) {
+        $type: $bound
+    }
+}
+```
+
+Here, `$type` may refer to any of the regions `Ri`.
+Meanwhile, a constraint `$type: for<R0, ..., Rn> $bound` is lowered
+the same way but `$type` may not reference any `Ri`.
+
+### `dyn for<P0...Pn>` is not allowed type / `const` parameters
+
+*After* macro expansion, a Rust compiler will emit an error if the bound after
+`dyn` contains `for<$params>` where `$params` does not match `regions ","?`.
+Do note that this still means that `dyn for<T> $bound` *is* part of the grammar
+because of the significance of macros in Rust. The same applies to types.
+While `for<T> fn(T)` is a syntactically valid type, it is not semantically
+valid and thus it is not well-formed.
+
+### Type-generic bounds and constraints
+
+While the restrictions in the previous section wrt. `dyn` applies,
+similar to regions, a `for<...>` binder inside a bound or a constraint
+may contain a list of type variables `T0...Tn` where each variable `Ti`
+adheres to the grammar `tyvar_and_bounds`. For example, a Rust compiler
+will accept a constraint `for<T: Debug> Vec<T>: Debug`, or a constraint
+`F: for<T: Add> Fn(T, T) -> T`.
+
+A variable `Ti`, which may not shadow variables in parent scopes, may optionally
+contain a `+`-separated (or terminated) list of bounds `Tij` which can either be:
++ a region brought into scope in some parent scope or in the same binder
+  or the `'static` region.
++ a reference to a trait, e.g. `Ti: Debug`
++ another bound of form `for<...> $bound`
+
+Given a binder `for<T0: Tij, ..., Tn: Tnj> $bound` in set of constraints on a
+definition `$def` (including `struct`, `enum`, `union`, `fn`, `trait`, or `impl`),
+for a reference to `$def` to be well-formed (for an implementation this means
+that this is a requirement for it to be considered implemented), for each type
+variable `Ti`, `$bound` must hold for any arbitrary type for which a set
+of bounds `⊆ Tij` holds. Just as with region variables, this entails that a
+reference to `$def` may not impose an additional set of constraints on `Ti` but
+may weaken the set of requirements. For example, if `for<T> Foo<T>` holds
+then so too will `for<T: Debug> Foo<'b>`.
+
+Conversely, inside `$def`, for each variable `Ti`, the `$bound` is considered
+to hold for any arbitrary type for which at least all bounds `Tij` holds.
+In particular, this means that an arbitrary type may satisfy more bounds
+than the set in `Tij` but not fewer.
+
+As with regions, the implied bounds of `$bound` will be taken into account
+when determining the full set of constraints on `Ti`. For example, if given
+the constraint `for<'a, T> Foo<&'a T>` then `T: 'a` is implied.
+
+In chalk terms, a constraint `for<T0, ..., Tn> $type: $bound`
+is lowered into logic like so:
+
+```rust
+forall<T0, ..., Ln> {
+    if(
+        Constraint_00 && ... Constraint_0m &&
+        ...
+        Constraint_n0 && ... Constraint_nm
+    ) {
+        $type: $bound
+    }
+}
+```
+
+Here, `$type` may refer to any of the type variables `Ti`.
+Meanwhile, a constraint `$type: for<T0, ..., Tn> $bound` is
+lowered the same way but `$type` may not reference any `Ti`.
+
+Note that no restriction is imposed on the nesting of `for<...>` binders.
+For example, we may write `G: for<F: for<'a, T: fmt::Debug> Fn(&'a T)> Fn(F)`
+which will be lowered into:
+
+```rust
+forall<F> {
+    if(forall<'a, T> {
+        if(Outlives(T, 'a) && Implemented(T: ::core::fmt::Debug)) {
+            Implemented(F: Fn(&'a T))
+        }
+    }) {
+        Implemented(G: Fn(F))
+    }
+}
+```
+
+### Value-generic bounds and constraints
+
+A `for<...>` binder may contain zero or more `const`-value-variables of
+form `const C0: τ0, ..., const Cn: τn`. The semantics of what such a variable
+means is given by [RFC 2000]. These variables `Ci` do not have to be placed
+together contiguously and may be mixed in any order with type variables,
+described in the previous section, `T0...Tn`. However, just like type variables,
+`Ci` must come before any region variables.
+
+Most of the logic with respect to type variables applies to const-variables as
+well. The notable difference here is that there is no way to bound a value
+variable `Ci` as such a possibility does not exist for `<const N: Type>`
+variables in prenex form.
+
+Implied bounds apply for `const` variables as well. For example, if you write:
+`for<'a, T, const X: &'a T> ...` then `T: 'a` is implied.
+
+### Closure expressions
+
+Let:
+
++ `Ri` denote the `i`th quantified region variable (`region_var`).
+
+  There may be zero or more region variables.
+
++ `Pi` denote the `i`th quantified type variable (`tyvar_and_bounds`)
+  or const value variable (`const_generic`).
+
+  There may be zero or more such variables.
+
+  Note that for both `Pi` and `Ri` only the variables in the *immediate*
+  `for<...>` binder is included. Variables in nested `for<...>` are not
+  part of `Pi` and `Ri`.
+
++ `xi`, denote a pattern which is a parameter of a closure
+  including an optional type `Ti` if it is specified.
+
++ `Tr` denote the optionally specified return type of a closure.
+
++ `body_expr` denote the expression that makes up the body of a closure.
+
+When type checking a closure of the following form in abstract syntax:
+
+```rust
+move? for<R0, ... Rn, P0, ..., Pn> |x0, xi, xn| -> Tr { body_expr }
+```
+
+The following steps, which may be reordered if the semantics are preserved,
+are taken:
+
+1. A new environment `Γc` is added.
+
+2. All `Ri` are added to `Γc` and noted as untouchable variables.
+
+3. All `Pi` are added to `Γc` and noted as untouchable variables.
+
+   By untouchable, we here mean that a variable `Pi` or `Ri` is
+   not a unification variable since it originaltes from an explicitly
+   given signature and thus it cannot be instantiated at a different type.
+
+4. `Γc` is checked to not contain any variables introduced in ancestors
+   typing environments collectively known as `Γa`.
+   The parent environment and ancestors include variables on
+   `impl<...>`, `fn<...>`, and a `for<...>` binder in a ancestor closures.
+
+5. For all occurences of `impl Bounds` in `xi` a type variable
+   `$F: Bounds` where `$F` is a fresh name is added to `Γc` and
+   the type of `xi` is noted as `$F`.
+   This does not apply to `impl Bounds` when it occurs in `$x`
+   and `$y` of `$TraitRef($x) -> $y`.
+
+   If `impl Bound` occurs in `Tr` then it is substituted for a fresh
+   `existential type $F: Bounds`.
+
+6. `Γc` is checked to be a well formed typing environment and implied bounds
+   are added.
+
+7. The return type of the closure is noted in `Γc` as `Tr` and is checked for
+   well formedness taking into account implied bounds.
+   If `Tr` was not specified, a unification variable `?Tr` is added to 
+   `Γc` and set as the return type of the closure.
+
+8. For all patterns `xi`, for any part of the pattern `xi` where
+   the type is unknown, a unification variable `?Tij` is added to `Γc`.
+
+9. Given the environments `Γc` and `Γa` (containing mappings of all captures),
+   which are known not to have any shadowing due to 5.,
+   unification of all variables `?Tr` and `?Tij` is
+   attempted with the expression `body_expr`.
+
+   During unification, some variables may be substituted for known values
+   or partially known values, including `Ri` and `Pi`.
+   When doing so, additional variables may be introduced where needed.
+
+   Additionally, during unification, additional constraints discovered
+   for `body_expr` to be well formed may be added to `Γc`.
+   These constraints may reference variables `Ri` or `Pi`.
+
+10. Having unified with `body_expr`, all remaining unification variables in `Γc`
+    are substituted for fresh variables in `Γc`.
+
+11. The product type `$C` is constructed with fields for all captured bindings
+    taking into account `move` or non-`move` mode.
+    
+    The implementations of `Fn`, `FnMut`, and `FnOnce`,
+    depending on what the closure affords, for `$C` are constructed.
+
+    The variables, including constraints, in `Γc` are added to each
+    implementation.
+
+    The associated type `Output` of each implementation becomes `Tr` which is
+    either a variable at this point or a concrete type.
+
+    The types `Ti` are set as the argument type of the implementations.
+
+    At this point, the most general type of the closure has been inferred.
+
+## Dynamic semantics
+
+All changed and new constructs in this RFC derives dynamic semantics
+from existing dynamic semantics after monomorphization.
+In other words, this RFC has no impact on the dynamic semantics of Rust.
 
 # Drawbacks
 [drawbacks]: #drawbacks
+
+TODO
+
+- complexity
+
+- type inference decidability?
 
 TODO
 
@@ -512,23 +1030,199 @@ TODO
 
 TODO
 
+- motivate `dyn for<T>` in grammar.
+
+- implied bounds
+
+- the combination features, independence, etc.
+
+TODO
+
 # Prior art
 [prior-art]: #prior-art
+
+TODO
+
+- Generic closures in C++
+
+- Generic closures in Haskell
+
+- Look into Scala, xML wrt. RankNTypes & generic closures.
+
+- QuantifiedConstraints
+
+- RankNTypes
+
+- Look into dependently typed languages
 
 TODO
 
 # Unresolved questions
 [unresolved-questions]: #unresolved-questions
 
-TODO
+1. Is the behavior with respect to implied bounds right?
 
 # Future work
 [future-work]: #future-work
 
-TODO
+## Shorthand syntaxes `impl<T, ...>` and `dyn<'a, ...>`
 
-- `dyn<'a>`?
-- `impl<'a, T, ..>`?
-- rank-3?
-- `where` for reverse bounds?
-- `impl Fn(impl Debug)`? meaning? where goes the binder?
+A possible extension of this RFC is to permit the syntax `impl<T, ...> $bound`
+as argument and return types. This would allow you to write:
+
+```rust
+fn debug_a_few_things_4(debug: impl<T: fmt::Debug> Fn(T)) {
+    ...
+}
+
+fn identity() -> impl<T> Fn(T) -> T { |x| x }
+```
+
+One thing to note here is that the binder `<T>` in `impl<T>` applies to the
+entire set of bounds separated by `+` as opposed to `impl for<T> X<T> + Y`
+which associates as `impl (for<T> X<T>) + Y`.
+
+The main benefit of this syntax is that if you write:
+
+```rust
+impl<T> MyTrait<T> for MyType {
+    ...
+}
+```
+
+then the syntax `impl<T> MyTrait<T>` can be used as a type to denote a type
+which must satisfy `MyTrait<T>` for all `T`. This correspondence in between
+implementation syntax and type syntax could be a boon for learnability.
+
+Similarly, we could allow regions to be quantified in `dyn` as:
+`Box<dyn<'a> Fn(&'a u8)>`.
+
+## `impl Fn(impl Debug)`
+
+The syntax `impl Fn(impl Debug)` could be used as a shorthand for
+`impl for<T: Debug> Fn()`. This would improve the consistency between functions
+written as `fn foo(arg: impl Debug) { ... }` which already exist but also with
+closures written as `|arg: impl Debug| ...` as proposed in this RFC.
+
+However, one potential drawback could be that some users might interpret
+`arg: impl Fn(impl Debug)` as:
+
+```rust
+fn foo<T, F>(arg: F) where T: Debug, F: Fn(T) { ... }
+```
+
+The fact that `Fn(...)` uses parenthesis instead of `<...>` might be enough
+to justify the difference in semantics.
+
+## `TypeCtor<impl Trait>` in `where`
+
+Another extension with which `for<T: Trait> ...` could be more succinctly
+expressed would be to allow `impl Trait` inside of `where` clauses.
+For example, one could write:
+
+```rust
+where
+    Vec<impl Clone>: Clone
+```
+
+which could be an equivalent way of expressing:
+
+```rust
+where
+    for<T: Clone> Vec<T>: Clone
+```
+
+In chalk, this would map to the goal:
+
+```rust
+forall<T> {
+    if(Implemented(T: Clone)) {
+        Implemented(Vec<T>: Clone)
+    }
+}
+```
+
+## Denoting *"reverse constraints"* in `for<...>`
+
+In this RFC we have not introduced any mechanism to bound type variables
+and regions quantified in `for<...>` with so called *"reverse constraints"*.
+An example of a reverse constraints is:
+
+```rust
+fn foo_1<T>(arg: Bar)
+where
+    Bar: Into<T> // Reverse constraints!
+{
+   ... 
+}
+```
+
+In this case, the `where` clause can't be removed since you can't write:
+
+```rust
+fn foo_2<T, Bar: Into<T>>(arg: Bar) { ... }
+```
+
+The function `foo_2` would not be the same as `foo_1` because `Bar` would be
+interpreted as a type variable in `foo_2` but as a concrete type in `foo_1`.
+
+Since `for<...>` can only quantify variables and bound them there is no
+way denote a reverse constraints. To alleviate this, we might need some
+form of local `where` clause which applies to a `for<...>` binder.
+Possible syntaxes for such a `where` clause include:
+
+```rust
+fn foo<'global, F>()
+where
+    F: for<'a, 'local> where { 'global: 'local }
+       FnOnce(Context<'a, 'local, 'global>)
+```
+
+Here `where { ... }` includes braces because there would be ambiguity otherwise.
+
+```rust
+fn foo<'global, F>()
+where 
+    F: for<'a, 'local> FnOnce(Context<'a, 'local, 'global>) 
+       where 'global: 'local,
+```
+
+Here there is an ambiguity if you want to add more constraints to the outer
+`where` clause. This can be resolved with various schemes for disambiguation,
+for example, you can write:
+
+```rust
+fn foo<'global, F>()
+where 
+    F: for<'a, 'local> FnOnce(Context<'a, 'local, 'global>) 
+       where {
+           'global: 'local,
+       },
+    ...
+```
+
+or:
+
+```rust
+fn foo<'global, F>()
+where 
+    F: {
+        for<'a, 'local> FnOnce(Context<'a, 'local, 'global>) 
+        where'global: 'local,
+    },
+    ...
+```
+
+or:
+
+```rust
+fn foo<'global, F>()
+where
+    {
+        F: for<'a, 'local> FnOnce(Context<'a, 'local, 'global>) 
+        where'global: 'local,
+    },
+    ...
+```
+
+You could also use `( ... )` as the grouping mechanism instead of braces.
