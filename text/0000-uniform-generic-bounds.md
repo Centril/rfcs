@@ -227,8 +227,6 @@ This RFC aims to:
 
     2. with implicit quantification of generic parameters
        using `|x: impl Trait| ...`.
-       Subject to stabilization of [RFC 2071] or [RFC 2515] `impl Trait`
-       is also permitted in the explicit return type of a closure.
 
     3. by inferring the most general type.
 
@@ -351,10 +349,7 @@ trait DebugFn {
 
 // The implementations...
 
-fn debug_a_few_things_3<F>(debug: impl DebugFn)
-where
-    F: DebugFn
-{
+fn debug_a_few_things_3(debug: impl DebugFn) {
     ...
 
     debug.debug(42u8);
@@ -529,8 +524,9 @@ parameter could be instantiatied at which is infeasible.
 [dependent types]: https://en.wikipedia.org/wiki/Dependent_type
 
 [RFC 2000] introduced *"const generics"* which let you be polymorphic
-over *values* known at compile time. This amounts to a restricted form
-of [dependent products] / Π-types (see: value-[dependent types]).
+over *values* known at compile time and lets types depend on those values.
+This amounts to a restricted form of [dependent products] / Π-types
+(see: value-[dependent types]).
 
 With const generics, we can define a function which works on arrays of any size:
 
@@ -629,10 +625,6 @@ let g: impl Fn(u8) -> impl Iterator<Item = u8>
                    // ^^^^ Allowed as the return type of Fn(...)
      = |x: u8| -> impl Iterator<Item = u8> { 0..=x };
 ```
-
-As noted in the overview, `impl Trait` as the return type of
-`Fn`, `FnMut`, and `FnOnce` traits as well as closures depends
-on the the outcome of [RFC 2071] and [RFC 2515].
 
 ### Inferred
 
@@ -842,11 +834,11 @@ Given a binder `for<T0: Tij, ..., Tn: Tnj> $bound` in set of constraints on a
 definition `$def` (including `struct`, `enum`, `union`, `fn`, `trait`, or `impl`),
 for a reference to `$def` to be well-formed (for an implementation this means
 that this is a requirement for it to be considered implemented), for each type
-variable `Ti`, `$bound` must hold for any arbitrary type for which a set
-of bounds `⊆ Tij` holds. Just as with lifetime variables, this entails that a
-reference to `$def` may not impose an additional set of constraints on `Ti` but
-may weaken the set of requirements. For example, if `for<T> Foo<T>` holds
-then so too will `for<T: Debug> Foo<'b>`.
+variable `Ti`, `$bound` must hold for any arbitrary type for which a set of
+bounds `⊆ Tij` holds (subsumation). Just as with lifetime variables,
+this entails that a reference to `$def` may not impose an additional
+set of constraints on `Ti` but may weaken the set of requirements.
+For example, if `for<T> Foo<T>` holds then so too will `for<T: Debug> Foo<'b>`.
 
 Conversely, inside `$def`, for each variable `Ti`, the `$bound` is considered
 to hold for any arbitrary type for which at least all bounds `Tij` holds.
@@ -1007,7 +999,8 @@ are taken:
 
     The types `Ti` are set as the argument type of the implementations.
 
-    At this point, the most general type of the closure has been inferred.
+    At this point, if possible, the most general type of the closure
+    has been inferred.
 
 ## Dynamic semantics
 
@@ -1062,6 +1055,9 @@ TODO
 [unresolved-questions]: #unresolved-questions
 
 1. Is the behavior with respect to implied bounds right?
+
+- forall c. c => c ? forbid it?
+- see https://ghc.haskell.org/trac/ghc/ticket/15316
 
 # Future work
 [future-work]: #future-work
@@ -1152,7 +1148,7 @@ An example of a reverse constraints is:
 ```rust
 fn foo_1<T>(arg: Bar)
 where
-    Bar: Into<T> // Reverse constraints!
+    Bar: Into<T> // Reverse constraint!
 {
    ... 
 }
