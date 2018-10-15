@@ -64,9 +64,9 @@ This RFC would be consistent with such inference.
 + A *[Zero-Sized Type][zst] (ZST)* is a type for which
   `std::mem::size_of::<TheType>()` evaluates to `0`.
 
-+ A *singleton type* or *[unit type][unit]* is a type which can only be
-  constructed in *one way* wherefore it carries no information.
-  This is not always the same as a ZST but it often is.
++ A *singleton type* or *[unit type][unit]* is a type which can
+  only be constructed in *one way* (modulo side effects) wherefore it
+  carries no information. This is not always the same as a ZST but it often is.
   One property of a singleton type `S` is that for *any* type `T`,
   it is always possible to define a non-diverging function `fn(T) -> S`.
   This is because all singleton types are *[terminal]* objects.
@@ -104,6 +104,12 @@ struct Empty<T> {
 impl<T> Empty<T> {
     pub fn new() -> Self { _ }
 }
+
+fn pair_empties() -> (Empty<String>, Empty<u8>) { _ }
+
+fn singleton_array() -> [(); 2] { _ }
+
+fn empty_array() -> [String; 0] { _ }
 ```
 
 But visibility is taken into account:
@@ -135,6 +141,24 @@ struct Foo;
 fn bar() -> Foo {
     _
 //  ^ Error! The type `Foo` is `#[non_exhaustive]`.
+}
+```
+
+Enums which only have a single inhabited variant with singleton types can also
+be constructed with `_`:
+
+```rust
+enum Result<T, E> {
+    Ok(T),
+    Err(E),
+}
+
+fn always_ok() -> Result<(), !> {
+    // We have:
+    enum Result { Ok(()), Err(!) }
+    // and `Result::Err` is an uninhabited variant.
+
+    _ // Becomes: Ok(_) which becomes Ok(())
 }
 ```
 
@@ -288,7 +312,7 @@ then we cannot write `(_,)` or `_`.
 We define an elaboration of `_` into a Rust with explicitly given values with
 the relation `⇝iv`. The elaboration is given in small-step style.
 To fully elaborate into a Rust without `_` at the expression level,
-the reflexive and transitive closure `⇝iv*` is used.
+apply the transformation below everywhere `_` recursively until a fixed point.
 
 1. When `_` is inferred to be of type `PhantomData<T>` for some type `T` then
    it elaborates to `PhantomData`.
