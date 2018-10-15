@@ -6,7 +6,17 @@
 # Summary
 [summary]: #summary
 
-TODO
+Permit the gradual initialization of structs like so:
+
+```rust
+struct Point<T> { x: T, y: T }
+
+let pt: Point<_>;
+pt.x = 42;
+pt.y = 24;
+
+drop(pt);
+```
 
 # Motivation
 [motivation]: #motivation
