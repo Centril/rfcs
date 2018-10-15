@@ -375,6 +375,12 @@ the reflexive and transitive closure `⇝iv*` is used.
 
 7. Otherwise there's nothing to elaborate.
 
+### Termination
+
+Elaboration is guaranteed to terminate. We can see this by considering the size
+of types that additional `_` expressions left by elaboration are inferred to.
+Eventually, all `_` left will infer to a base-case type which are not aggregates.
+
 ## Dynamic semantics
 
 This proposal has no effect on the dynamic semantics of Rust since elaboration
