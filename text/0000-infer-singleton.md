@@ -344,6 +344,7 @@ the reflexive and transitive closure `⇝iv*` is used.
    Γ ⊢ non_exhaustive(σ) = ⊥
    Γ ⊢ visible(x.f0), ..., visible(x.fn)
    Γ ⊢ singleton(σ0), ..., singleton(σn)
+   Γ ⊢ _ : σ
    ----------------------------------------------- InferValStruct
    Γ ⊢ _ ⇝iv x { f0: _, ..., fn: _ }
    ```
@@ -367,6 +368,7 @@ the reflexive and transitive closure `⇝iv*` is used.
            singleton(σi0), ..., singleton(σin) ∧
            ∀ j ≠ i. uninhabited( (σj0, ..., σjn) )
        ]
+   Γ ⊢ _ : σ
    ----------------------------------------------- InferValEnum
    Γ ⊢ _ ⇝iv x::vi { fi0: _, ..., fin: _ }
    ```
