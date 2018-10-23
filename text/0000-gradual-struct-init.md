@@ -98,7 +98,7 @@ Suppose that you have a `struct` (1):
 ```rust
 struct Foo<T> {
     bar: usize,
-    baz: T,
+    qux: T,
 }
 ```
 
@@ -113,7 +113,7 @@ Currently, if you want to make a `Foo` then you have to write (3):
 ```rust
 let foo = Foo {
     bar: 42usize,
-    baz: 24u8,
+    qux: 24u8,
 };
 ```
 
@@ -122,14 +122,14 @@ let foo = Foo {
 ```rust
 let foo;
 foo.bar = 42usize;
-foo.baz = 24u8;
+foo.qux = 24u8;
 
 consume(foo); // OK!
 ```
 
 ### Immutable and mutable bindings
 
-Note that in snippet (4), you are *not* mutating `foo`, `foo.bar`, or `foo.baz`.
+Note that in snippet (4), you are *not* mutating `foo`, `foo.bar`, or `foo.qux`.
 These fields are only being initialized. If you however assign to `foo.bar`
 twice as in (5):
 
@@ -137,7 +137,7 @@ twice as in (5):
 let foo: Foo<u8>;
 
 foo.bar = 42usize;
-foo.baz = 24u8;
+foo.qux = 24u8;
 
 // Error! Second time you assign to `foo.bar` but `foo` is not a mutable binding!
 foo.bar = 43;
@@ -153,7 +153,7 @@ To remedy this, **_you may write_** (6):
 let mut foo: Foo<u8>;
 
 foo.bar = 42usize;
-foo.baz = 24u8;
+foo.qux = 24u8;
 
 foo.bar = 43; // OK!
 
@@ -169,14 +169,15 @@ Suppose instead that you wrote (7):
 ```rust
 let mut foo;
 
-foo.baz = 42;
+foo.qux = 42;
 
 consume(foo); // Error! `foo.bar` is not initialized.
 ```
 
-The snippet in (7) would be *rejected* by the compiler because otherwise `foo.bar`
-would be uninitialized and thus you would not have a valid `Foo`, thus causing
-the type system to be unsound and the program to exhibit undefined behaviour.
+The snippet in (7) would be *rejected* by the compiler because
+otherwise `foo.bar` would be uninitialized and thus you would not
+have a valid `Foo`, thus causing the type system to be unsound and
+the program to exhibit undefined behaviour.
 
 In our proposal, it is also not legal to take a reference to `foo`, as with
 `&mut foo` or `&foo` while parts of it isn't initialized. You also cannot
@@ -188,13 +189,17 @@ allow you to write (8)_**:
 ```rust
 let foo;
 
-foo.baz = 42;
+foo.bar = 42;
 
 if random_bool() {
-    foo.bar = 1;
+    foo.qux = 1;
 } else {
-    foo.bar = 2;
+    foo.qux = 2;
 }
+
+// Nota bene:
+// In this case foo.qux = if random_bool() { 1 } else { 2 };
+// is preferable as a matter of style.
 
 consume(foo); // OK!
 ```
@@ -207,7 +212,7 @@ uninitialized in the `else` branch (9):
 ```rust
 let foo;
 
-foo.baz = 42;
+foo.qux = 42;
 
 if random_bool() {
     foo.bar = 1;
@@ -223,38 +228,42 @@ The general condition here is that all fields must be *definitely initialized*.
 ### Partial initialization and referencing fields
 
 We previously noted that you may not move or reference parts of `foo` that are
-not yet initialized. The converse also applies. **_You may reference, move, or
-copy parts the parts that are initialized while the whole type isn't._** (10):
+not yet initialized. The converse also applies. **_You may reference, move,
+or copy parts the parts that are initialized while the whole type isn't._** (10):
 
 ```rust
 let mut foo: Foo<u8>;
 
-foo.bar = 1;
+foo.qux = 1;
+// ^-------
+// this is required because we must initialize
+// all fields of `foo` at some point.
+
+foo.bar = 2;
 
 {
     let my_bar: &usize = &foo.bar; // OK!
-}
-
+} // <- Shared borrow ends here.
 
 {
     let my_mut_bar: &mut usize = &mut foo.bar; // OK!
-}
+} // <- Mutable borrow ends here.
 
 drop(foo.bar); // OK!
 ```
 
 ### Immovable "self-referential" types
 
-Because you are now able to construct `Foo<T>` piecemeal, this enables you to
-**_reference parts of `Foo<T>` that have already been initialized in other parts
-of `Foo<T>`_**. For example, you may write (11):
+Because you are now able to construct `Foo<T>` piecemeal, this enables you
+to **_reference parts of `Foo<T>` that have already been initialized in other
+parts of `Foo<T>`_**. For example, you may write (11):
 
 ```rust
 let foo: Foo<&usize>;
 
 foo.bar = 42;       // <--
                     //   |
-foo.baz = &foo.bar; // --| The compiler will ensure that this is dropped first
+foo.qux = &foo.bar; // --| The compiler will ensure that this is dropped first
                     //     so that there are no dangling references.
 
 // We can take a reference to `&foo`, that doesn't move `foo` anywhere:
@@ -265,12 +274,12 @@ So far so good. However, if you add a line at the end and try to move `foo`
 itself, you will run into trouble (12):
 
 ```rust
-// Error! We can't move `foo` because `foo.baz` borrows `foo.bar`.
+// Error! We can't move `foo` because `foo.qux` borrows `foo.bar`.
 consume(foo);
 ```
 
 With the addition of (12), an error arises because if it were otherwise,
-`foo.baz` would point to the old address of `foo.bar` which would now be
+`foo.qux` would point to the old address of `foo.bar` which would now be
 invalid. This would be unsound due to the dangling reference.
 
 ### Reinitialization
@@ -284,12 +293,12 @@ Before this RFC, you had to reinitialize `foo` with `foo = Foo { ... }`.
 ```rust
 let mut foo;
 foo.bar = 42usize;
-foo.baz = 24u8;
+foo.qux = 24u8;
 
 consume(foo); // OK!
 
 foo.bar = 1;
-foo.baz = 2;
+foo.qux = 2;
 
 consume(foo); // OK!
 ```
@@ -311,23 +320,24 @@ let foo: Foo<Void>;
 
 foo.bar = 42;
 
-foo.baz = ???;
+foo.qux = ???;
 
 consume(foo);
 ```
 
-What do you replace `???` with? `foo.baz : Void` is an uninhabited type,
-thus, there can be nothing you initialize `foo.baz` with or otherwise it
-wouldn't be of an uninhabited type. Indeed, you cannot initialize `foo.baz`
+What do you replace `???` with? The field `qux` is of the uninhabited type `Void`.
+Thus, there can be nothing you initialize `foo.qux` with or otherwise it
+wouldn't be of an uninhabited type. Indeed, you cannot initialize `foo.qux`
 and so you will never be able to form a valid value of type `Foo<Void>`.
 This is to be expected, after all, you can't use the syntax
-`Foo { bar: 42, baz: <value> }` for this either.
+`Foo { bar: 42, qux: <value> }` for this either because you cannot produce a
+`<value>` of type `Void`.
 
 ### Respecting privacy
 
-Until now, all examples have been in contexts where the fields `bar` and `baz`
+Until now, all examples have been in contexts where the fields `bar` and `qux`
 have been visible. In a case where the fields are not visible, you won't be able
-to construct a value of `Foo<T>` with `Foo { bar: x, baz: y }`. The gradual
+to construct a value of `Foo<T>` with `Foo { bar: x, qux: y }`. The gradual
 method is no different; to initialize the fields with the gradual method,
 you must be able to refer to the fields. If you are not, then it follows that
 you won't be able to construct a `Foo<T>`. In other words, the following would
