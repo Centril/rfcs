@@ -1,5 +1,5 @@
 - Feature Name: `gradual_struct_init`
-- Start Date: 2018-10-11
+- Start Date: 2018-10-24
 - RFC PR: _
 - Rust Issue: _
 
@@ -204,23 +204,23 @@ if random_bool() {
 consume(foo); // OK!
 ```
 
-The snippet in (8) is allowed because when `consume(foo)` is reached, `foo.bar`
+The snippet in (8) is allowed because when `consume(foo)` is reached, `foo.qux`
 is provably initialized no matter what branch is taken in the conditional.
-However, the following snippet would be rejected because `foo.bar` may be
+However, the following snippet would be rejected because `foo.qux` may be
 uninitialized in the `else` branch (9):
 
 ```rust
 let foo;
 
-foo.qux = 42;
+foo.bar = 42;
 
 if random_bool() {
-    foo.bar = 1;
+    foo.qux = 1;
 } else {
     // nothing here.
 }
 
-consume(foo); // ERROR! `foo.bar` not initialized in `else { .. }`.
+consume(foo); // ERROR! `foo.qux` not initialized in `else { .. }`.
 ```
 
 The general condition here is that all fields must be *definitely initialized*.
@@ -235,9 +235,8 @@ or copy parts the parts that are initialized while the whole type isn't._** (10)
 let mut foo: Foo<u8>;
 
 foo.qux = 1;
-// ^-------
-// this is required because we must initialize
-// all fields of `foo` at some point.
+
+drop(foo.qux);
 
 foo.bar = 2;
 
@@ -252,6 +251,12 @@ foo.bar = 2;
 drop(foo.bar); // OK!
 ```
 
+Note in particular that `foo` was never fully initialized here.
+As long as you don't move or borrow `foo`, this is permitted.
+However, you must assign to all fields of `foo` at least once.
+This restriction applies to make adding fields cause type errors
+so that you can refactor more easily.
+
 ### Immovable "self-referential" types
 
 Because you are now able to construct `Foo<T>` piecemeal, this enables you
@@ -263,7 +268,7 @@ let foo: Foo<&usize>;
 
 foo.bar = 42;       // <--
                     //   |
-foo.qux = &foo.bar; // --| The compiler will ensure that this is dropped first
+foo.qux = &foo.bar; // --/ The compiler will ensure that this is dropped first
                     //     so that there are no dangling references.
 
 // We can take a reference to `&foo`, that doesn't move `foo` anywhere:
@@ -313,7 +318,7 @@ Suppose instead that you defined an uninhabited type (14):
 enum Void {}
 ```
 
-Let's then write (16):
+Let's then write (15):
 
 ```rust
 let foo: Foo<Void>;
@@ -341,7 +346,7 @@ to construct a value of `Foo<T>` with `Foo { bar: x, qux: y }`. The gradual
 method is no different; to initialize the fields with the gradual method,
 you must be able to refer to the fields. If you are not, then it follows that
 you won't be able to construct a `Foo<T>`. In other words, the following would
-not be a valid Rust program (17):
+not be a valid Rust program (16):
 
 ```rust
 mod my_module {
@@ -361,46 +366,198 @@ fn main() {
 }
 ```
 
+[RFC 2008]: https://github.com/rust-lang/rfcs/blob/master/text/2008-non-exhaustive.md
+
+Per [RFC 2008], the type system will also respect `#[non_exhaustive]`
+annotations with respect to gradual initialization. That is, if you mark a
+`struct` with `#[non_exhaustive]` in one crate, then a downstream crate won't
+be able to use the gradual syntax to make a value of the type.
+
 ### No `Drop` types
 
-Consider a type which implements `Drop` in some way (18):
+Consider a type which implements `Drop` by printing something (17):
 
 ```rust
 struct SpecialDrop {
-    field: T,
+    alpha: u8,
+    beta: u16,
+    gamm: u32,
 }
 
 impl Drop for SpecialDrop {
     fn drop(&mut self) {
-
+        println!("Dropping in a special way!");
     }
 }
 ```
 
-Let's then use the gradual initialization mechanism in this RFC (19):
+Let's then use the gradual initialization mechanism in this RFC (18):
 
 ```rust
-let sd: SpecialDrop;
+fn foo() {
+    let sd: SpecialDrop;
 
-sd.field = 
+    sd.alpha = 1;
+    sd.beta = 2;
+
+    some_action_that_can_panic();
+
+    sd.gamma = 3;
+}
 ```
 
+If you don't have the definition of `SpecialDrop` in your near vicinity,
+it can become difficult to know whether the destructor, and thus the side effect
+in `SpecialDrop::drop` will run or when it will run. In (18), to know if and
+when the destructor will run, you would need to know that `SpecialDrop` has the
+fields `alpha`, `beta`, and `gamma` and that `gamma` hasn't been initialized yet.
 
+Thus, while it would be sound to allow it, if a type implements `Drop`,
+the compiler will reject will not allow gradual initialization.
 
-TODO
+### Tuples and tuple structs also work
 
-### Tuples also work
+Hitherto, we have only gradually initialized `struct`s with named fields.
+However, this RFC makes no distinction between those and other forms of
+heterogeneous product types. In other words, **_you can also initialize
+tuple structs and normal tuples with the gradualist syntax._**
+That is, you can write (19):
 
-TODO
+```rust
+struct Point(f32, f32);
+
+let pt: Point;
+
+pt.0 = 42.24;
+pt.1 = 13.37;
+
+drop(pt);
+```
+
+as well as (20):
+
+```rust
+fn consume_pair((x, y): (u8, u8)) { ... }
+
+let pt;
+pt.0 = 42;
+pt.1 = 24;
+
+consume_pair(pt);
+```
 
 ### Gradual initialization in fields
 
-TODO
+What we have said so far does not just apply to local bindings.
+You can use the gradualist mechanism in fields as well.
+For example, you may use the gradual notation as a sort of builder notation (21):
+
+```rust
+struct Config {
+    window: WindowConfig,
+    runtime: RuntimeConfig,
+}
+
+struct WindowConfig {
+    height: usize,
+    width: usize,
+}
+
+struct RuntimeConfig {
+    threads: usize,
+    max_memory: usize,
+}
+
+fn make_config() -> Config
+    let cfg;
+
+    cfg.window.width = 1920;
+    cfg.window.height = 1080;
+    // cfg.window is definitely initialized now.
+
+    cfg.runtime.threads = 8;
+    cfg.runtime.max_memory = 1024;
+    // cfg.runtime is definitely initialized now.
+    // therefore cfg is also.
+
+    cfg
+}
+```
+
+The usual same rules with respect to eventual definite initialization,
+privacy, uninhabited types, prohibitions on `Drop` types, etc. apply
+here as well.
 
 # Reference-level explanation
 [reference-level-explanation]: #reference-level-explanation
 
-TODO
+## Grammar
+
+There are no changes to the grammar.
+
+## Semantics
+
+Let:
+
+- `n` range over the natural numbers.
+
+- `Γ` be a well-formed typing environment.
+
+- `σ` be a well-formed type in `Γ`.
+
+- `typeof(e)` denote the type `σ` of an expression `e` in `Γ`.
+
+- `downstream(σ)` be a predicate holding iff `σ` is not defined in the current
+  crate.
+
+- `non_exhaustive(σ)` be a predicate holding iff:
+   - `σ` has `#[non_exhaustive]` directly applied to it,
+   - `downstream(σ)` holds.
+
+- `visible(σ, f)` be a predicate holding iff for `σ`,
+  the field `f` is visible in `Γ`.
+
+- `implemented(σ, τ)` be a predicate holding iff `σ` implements the trait `τ`.
+
+- `D` range over valid identifiers.
+
+- `G` denote the generic parameters on a data type definition.
+
+- `P` be all the product types in `σ`, namely:
+
+    ```rust
+    P : struct D ; // Unit data types.
+      | struct D < G > ( σ_0, ..., σ_n ); // Tuple struct data types.
+      | struct D < G > { f_0: σ_0, ..., f_n: σ_n } // Named field struct data types.
+      | ( σ_0, ..., σ_n ) // Structural tuple types.
+      ;
+    ```
+
+- `PG = { σ ∈ P | implemented(P, Drop) ≡ ⊥ ∧ non_exhaustive(σ) ≡ ⊥ }`
+
+- `p` denote a place expression.
+
+- `m(p)` be a predicate holding iff `p` is a mutable place.
+
+Given a place `p`, iff `typeof(p) ∈ PG`, then `p` may be *gradually* initialized.
+This means that:
+
+1. an uninitialized field `f` of `p`, whether `f` be a numbered tuple
+   index or a named field, may be initialized with an assignment expression
+   `p.f = value_expr`, if `visible(typeof(p), f)`.
+
+2. iff `m(p)`, then `p.f` may be assigned to more than once.
+   Otherwise, it may only be assigned to once in any path in the control graph.
+
+3. a field or sub-field `f` of `p` may be moved out of
+   (unless `implemented(typeof(p), Drop)` or if `p` or `p.f` is borrowed) or
+   borrowed (including mutably iff `m(p)`) if `p.f` is definitely initialized.
+
+4. the place `p` is valid, meaning that it may be moved or referenced,
+  once all of its fields have been definitely initialized.
+
+5. before `p` goes out of scope, all fields of `p` must have been initialized
+   at some point at least once.
 
 # Drawbacks
 [drawbacks]: #drawbacks
@@ -422,7 +579,7 @@ TODO
 
 TODO
 
-# Future work
-[future-work]: #future-work
+# Future possibilities
+[future-possibilities]: #future-possibilities
 
 TODO
