@@ -21,9 +21,53 @@ drop(pt);
 # Motivation
 [motivation]: #motivation
 
-The main motivation of this RFC is 
+The RFC has two main motivations.
+TODO: improve section prelude.
 
-TODO
+## Ergonomics and readability (TODO: concretize the title)
+
+TODO: Felix and/or Niko: please fill in this section :)
+
+## Immovable self-referential structs
+
+Currently, if you want to encode an immovable self-referential type,
+you'll have to use `Cell`s and `Option`s such as with:
+
+```rust
+#[derive(Debug)]
+struct S<'a> {
+    val: u32,
+    ptr: Cell<Option<&'a u32>>,
+}
+
+fn main() {
+    let s = S { val: 10, ptr: Cell::new(None), };
+    s.ptr.set(Some(&s.val));
+    
+    println!("s: {:?}", s);
+}
+```
+
+With gradual initialization, we can instead allow you to write:
+
+```rust
+#[derive(Debug)]
+struct S<'a> {
+    val: u32,
+    ptr: &'a u32,
+}
+
+fn main() {
+    let s: S;
+    s.val = 10;
+    s.ptr = &s.val;
+
+    println!("s: {:?}", s);
+}
+```
+
+You still cannot move `s` because `s.val` is borrowed in `s.ptr`;
+However, the advantage here is that we avoid the indirection of `Option<T>`.
 
 # Guide-level explanation
 [guide-level-explanation]: #guide-level-explanation
@@ -229,7 +273,7 @@ The general condition here is that all fields must be *definitely initialized*.
 
 We previously noted that you may not move or reference parts of `foo` that are
 not yet initialized. The converse also applies. **_You may reference, move,
-or copy parts the parts that are initialized while the whole type isn't._** (10):
+or copy the parts that are initialized while the whole type isn't._** (10):
 
 ```rust
 let mut foo: Foo<u8>;
@@ -248,14 +292,17 @@ foo.bar = 2;
     let my_mut_bar: &mut usize = &mut foo.bar; // OK!
 } // <- Mutable borrow ends here.
 
-drop(foo.bar); // OK!
+foo.qux = 1;
 ```
 
-Note in particular that `foo` was never fully initialized here.
-As long as you don't move or borrow `foo`, this is permitted.
-However, you must assign to all fields of `foo` at least once.
-This restriction applies to make adding fields cause type errors
-so that you can refactor more easily.
+Note in particular that `foo.qux` is not initialized when we refer to `foo.bar`.
+As long as you don't refer to `foo.qux` and `foo` while it is uninitialized this
+is ok. You must also make sure that `foo` is definitively initialized at some
+point even if you move out of some fields before `foo` goes out of scope.
+Furthermore, it is not sufficient to simply initialize parts of `foo` at
+various times; all of `foo` must be initialized at the *same* point.
+These restriction apply to make adding fields cause type errors so that
+you can refactor more easily.
 
 ### Immovable "self-referential" types
 
@@ -533,6 +580,8 @@ Let:
       ;
     ```
 
+    (If structural records were ever to be added they would also be included.)
+
 - `PG = { σ ∈ P | implemented(P, Drop) ≡ ⊥ ∧ non_exhaustive(σ) ≡ ⊥ }`
 
 - `p` denote a place expression.
@@ -554,32 +603,137 @@ This means that:
    borrowed (including mutably iff `m(p)`) if `p.f` is definitely initialized.
 
 4. the place `p` is valid, meaning that it may be moved or referenced,
-  once all of its fields have been definitely initialized.
+   once all of its fields have been definitely initialized.
 
-5. before `p` goes out of scope, all fields of `p` must have been initialized
+5. before `p` goes out of scope, `p` must have been definitively initialized
    at some point at least once.
 
 # Drawbacks
 [drawbacks]: #drawbacks
 
-TODO
+The usual drawbacks with respect to having more ways to do it applies,
+in particular, it could lead to decision fatigue between the struct literal
+approach and the gradualist approach.
+
+Another drawback is that we don't provide an similar way for enums to be
+gradually constructed.
+
+Furthermore, the gradual approach could be considered more imperative than
+functional which some functional programmers may not prefer and this would
+increase the likelihood of that in the ecosystem. However, the author of
+this proposal is a functional programmer (of the Haskell variety) and they
+do like what they are proposing.
+
+Yet another drawback is that it could become harder to see when a value is
+constructed.
+
+Perhaps the most major drawback in this proposal is the complexity increase
+in the type system. This will make alternative (to `rustc`) Rust compilers
+more difficult to write.
 
 # Rationale and alternatives
 [rationale-and-alternatives]: #rationale-and-alternatives
 
-TODO
+With respect to the current design, the choice of surface syntax is quite
+straightforward. We simply extend the assignment syntax that already exists.
+
+However, some tweaks in various directions could be made to the RFC:
+
+1. We could limit gradual initialization to top level bindings.
+   This would limit the power and is seemingly an arbitrary restriction
+   that could cause surprises.
+
+1. We could require that a gradually initialized place be definitively
+   initialized before allowing references or moving out of parts.
+   This would mean that we could not write:
+
+   ```rust
+   let foo: Foo;
+   foo.bar = 1;
+   foo.baz = &foo.bar;
+   ```
+
+   That would remove one of the uniquely useful things about the
+   proposed syntax.
+
+3. We could limit this to nominal types or just to types with named fields.
+   While that is possible, it complicates understanding of the type system.
+
+4. We could allow `Drop` types to be gradually initialized.
+   This is discussed in the [unresolved questions][unresolved-questions].
 
 # Prior art
 [prior-art]: #prior-art
 
-TODO
+None to our knowledge.
 
 # Unresolved questions
 [unresolved-questions]: #unresolved-questions
 
-TODO
+1. Should we lift the requirement that each field must be definitively
+   initialized at least once before a gradually initialized place goes
+   out of scope?
+
+   We have imposed this restriction to make sure that adding a new field
+   causes a type error in all cases; if we lifted the restriction,
+   that would no longer hold.
+
+2. Should we allow gradual initialization for types implementing `Drop`?
+
+   While this might make the language more consistent and uniform,
+   it might also become too much magic. In particular, it becomes less
+   clear when destructors will run and understanding when it happens might
+   require tracking "more boolean variables" in your head.
+   For example, if we write:
+
+   ```rust
+   let foo;
+   foo.bar = <expr>;
+   foo.baz = <expr>;
+   foo.quux = <expr>;
+   may_panic();
+
+   // a few lines later...
+   foo.wibble = <expr>;
+   ```
+
+   Then we have to know that `foo` has 4 fields to know that `may_panic()`
+   will not run the destructor of `typeof(foo)`.
+
+   It is however unclear if this would be a problem in practice and
+   it could be solved by privacy.
+
+   If we do however allow `Drop` types to be gradually initialized,
+   then we should also lift the restriction on moving out of `Drop`
+   types to make things consistent.
+
+   If we want to allow `Drop` types, then the restriction in 1.
+   is helpful because there's less to track in your head.
+
+3. If we permit structural records, and if the user writes:
+
+   ```rust
+   let foo;
+   foo.bar = 1;
+   foo.baz = true;
+   foo.qux = "hello";
+   drop(foo);
+   ```
+
+   Should then `foo`, if not otherwise constrained, be inferred to the type?:
+
+   ```rust
+   { bar: i32, baz: bool, qux: &'static str }
+   ```
+
+   This could be quite ergonomic, but it could also be too much magic.
 
 # Future possibilities
 [future-possibilities]: #future-possibilities
 
-TODO
+[RFC 2534]: https://github.com/rust-lang/rfcs/pull/2534
+
+Partially initialized objects is not exposed to the user in the type system.
+We could allow this with `&uninit T` references. That would allow uninitialized
+fields to pass into functions which can then initialize them.
+See [RFC 2534] for a discussion on `&uninit T`.
