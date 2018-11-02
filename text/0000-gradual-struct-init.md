@@ -731,9 +731,51 @@ None to our knowledge.
 # Future possibilities
 [future-possibilities]: #future-possibilities
 
+## `&uninit T`
+
 [RFC 2534]: https://github.com/rust-lang/rfcs/pull/2534
 
 Partially initialized objects is not exposed to the user in the type system.
 We could allow this with `&uninit T` references. That would allow uninitialized
 fields to pass into functions which can then initialize them.
 See [RFC 2534] for a discussion on `&uninit T`.
+
+## Initialization arrays gradually
+
+A further extension to this RFC could be to permit the gradual initialization
+of monomorphically sized arrays by using assignment to constant indices.
+For example, we could allow:
+
+```rust
+let arr: [i32; 3];
+
+arr[0] = 0;
+arr[1] = -12;
+arr[2] = 42;
+
+drop(arr);
+```
+
+Here, the indices `0`, `1`, and `2` are all known at compile time and the
+size of the array is also known. Thus, the compiler can know whether the
+array has been definitively initialized and enforce that it is before the
+array is used. The usual rules with respect to gradual initialization as
+outlined in this RFC would otherwise apply.
+
+Similar to the type-defaulting idea for structural records,
+we could also assume that `arr` is an array if the user writes:
+
+```rust
+let arr;
+
+arr[0] = 0;
+arr[1] = -12;
+arr[2] = 42;
+
+drop(arr);
+```
+
+Since the idea of gradual array initialization is orthogonal and
+because it overloads the meaning of the `place[idx] = <val_expr>`,
+we leave this for future consideration and do not propose such a
+facility at this time.
