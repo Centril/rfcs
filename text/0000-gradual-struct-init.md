@@ -460,7 +460,7 @@ when the destructor will run, you would need to know that `SpecialDrop` has the
 fields `alpha`, `beta`, and `gamma` and that `gamma` hasn't been initialized yet.
 
 Thus, while it would be sound to allow it, if a type implements `Drop`,
-the compiler will reject will not allow gradual initialization.
+the compiler will reject gradual initialization.
 
 ### Tuples and tuple structs also work
 
