@@ -264,6 +264,9 @@ if random_bool() {
     // nothing here.
 }
 
+// foo.qux = 2; -- adding this line would not help because now `foo.qux` may
+//                 be initialized twice and `foo` is not a `mut` binding.
+
 consume(foo); // ERROR! `foo.qux` not initialized in `else { .. }`.
 ```
 
