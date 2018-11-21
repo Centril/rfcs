@@ -8,10 +8,9 @@
 
 TODO improve this section.
 
-Extends universal quantification (generics) in bounds with
-`for<...>` to types and `const` values except for in `dyn` contexts.
-As a consequence, closures can now be polymorphic on types and `const` values.
-In other words, you can now write:
+Extends universal quantification (generics) in bounds with `for<...>` to types
+and `const` values except for in `dyn` contexts. As a consequence, closures can
+now be polymorphic on types and `const` values. In other words, you can now write:
 
 ```rust
 fn foo<F>(bar: F, baz: impl for<const N: usize> Fn([u8; N]))
@@ -671,7 +670,7 @@ An example of a constraint is `T: Copy + 'a` where `Copy + 'a` is a *bound*.
 
 A bound has the kind `k0 -> Constraint` where `k0 : ' | * ;` is a base kind.
 Here `'` is the kind of lifetimes (otherwise referred to as "regions"),
-e.g. `'a` and `'static`. Here, `*` is the kind of types, e.g. `Vec<bool>`.
+e.g. `'a` and `'static`. Meanwhile, `*` is the kind of types, e.g. `Vec<bool>`.
 Note that `Vec` is a type constructor of kind `* -> *` and *not* a type.
 
 In a `where` clause, a constraint of form `for<P0, ..., Pn> Type: Bound`
@@ -739,21 +738,22 @@ This also applies to `arg: impl for<...> Trait<...>` as well as
 ### The `'static` lifetime cannot be quantified
 
 While `'static` *is* permitted in the grammar of `lifetimes` above because
-the `item` macro fragment matcher allows it, but the compiler will also
-disallow it to be quantified after parsing. This RFC does not introduce the
-ability to write `for<'static>` syntactically since it is already permitted
-in stable compilers of Rust, but we take the opportunity to clarify here.
-The restriction on quantifying `'static` can be seen as a restriction
-on introducing shadowed parameter names where `'static` exists in the
-"global" scope.
+the `item` macro fragment matcher allows it, the compiler will disallow it
+to be quantified after parsing. This RFC does not introduce the ability to
+write `for<'static>` syntactically since it is already permitted in stable
+compilers of Rust, but we take the opportunity to clarify here. The restriction
+on quantifying `'static` can be seen as a restriction on introducing shadowed
+parameter names where `'static` exists in the "global" scope.
 
 ### Outlives requirements in `for<...>`
 
 A `for<...>` binder inside a bound or a constraint may contain a list of
 lifetimes `L0`...`Ln` (`lifetimes` in concrete syntax) adhering to the grammar
-`lifetime_var`. As examples, a Rust compiler will accept a type of form
-`Box<dyn for<'b: 'a> Fn(&'b u8)>`, a type of form `for<'b: 'a> fn(&'b u8)`,
-a constraint `for<'b, 'c> &'b &'c T: Debug`, or a bound `T: for<'a> MyTrait<'a>`.
+`lifetime_var`. As examples, a Rust compiler will accept:
++ a type of form `Box<dyn for<'b: 'a> Fn(&'b u8)>`,
++ a type of form `for<'b: 'a> fn(&'b u8)`,
++ a constraint `for<'b, 'c> &'b &'c T: Debug`,
++ a bound `for<'a> MyTrait<'a>`.
 
 None of the lifetimes `Li` may shadow any named and quantified lifetimes
 in any ancestor scope. The lifetimes `Li` may each optionally contain
@@ -762,7 +762,7 @@ the lifetime `Li` must outlive (by outlive we mean `≥` rather than `>`).
 Any referenced lifetimes `Lij` must be either be `'static` or must have
 been brought into scope in an ancestor scope.
 
-Given a binder `for<L0: L0j, ..., Ln: Lnj> $bound` in set of constraints on a
+Given a binder `for<L0: L0j, ..., Ln: Lnj> $bound` in the set of constraints on a
 definition `$def` (including `struct`, `enum`, `union`, `fn`, `trait`, or `impl`),
 for a reference to `$def` to be well-formed (for an implementation this means
 that this is a requirement for it to be considered implemented),
@@ -896,7 +896,7 @@ described in the previous section, `T0...Tn`. However, just like type variables,
 Most of the logic with respect to type variables applies to const-variables as
 well. The notable difference here is that there is no way to bound a value
 variable `Ci` as such a possibility does not exist for `<const N: Type>`
-variables in prenex form.
+variables in prenex (rank-1 quantification) form.
 
 Implied bounds apply for `const` variables as well. For example, if you write:
 `for<'a, T, const X: &'a T> ...` then `T: 'a` is implied.
@@ -918,7 +918,7 @@ Let:
   `for<...>` binder is included. Variables in nested `for<...>` are not
   part of `Pi` and `Li`.
 
-+ `xi`, denote a pattern which is a parameter of a closure
++ `xi` denote a pattern which is a parameter of a closure
   including an optional type `Ti` if it is specified.
 
 + `Tr` denote the optionally specified return type of a closure.
@@ -941,15 +941,15 @@ are taken:
 3. All `Pi` are added to `Γc` and noted as untouchable variables.
 
    By untouchable, we here mean that a variable `Pi` or `Li` is
-   not a unification variable since it originaltes from an explicitly
+   not a unification variable since it originates from an explicitly
    given signature and thus it cannot be instantiated at a different type.
 
 4. `Γc` is checked to not contain any variables introduced in ancestors
    typing environments collectively known as `Γa`.
    The parent environment and ancestors include variables on
-   `impl<...>`, `fn<...>`, and a `for<...>` binder in a ancestor closures.
+   `impl<...>`, `fn<...>`, and a `for<...>` binder in any ancestor closures.
 
-5. For all occurences of `impl Bounds` in `xi` a type variable
+5. For all occurrences of `impl Bounds` in `xi` a type variable
    `$F: Bounds` where `$F` is a fresh name is added to `Γc` and
    the type of `xi` is noted as `$F`.
    This does not apply to `impl Bounds` when it occurs in `$x`
@@ -958,18 +958,15 @@ are taken:
    If `impl Bound` occurs in `Tr` then it is substituted for a fresh
    `existential type $F: Bounds`.
 
-6. `Γc` is checked to be a well formed typing environment and implied bounds
-   are added.
-
-7. The return type of the closure is noted in `Γc` as `Tr` and is checked for
-   well formedness taking into account implied bounds.
-   If `Tr` was not specified, a unification variable `?Tr` is added to 
-   `Γc` and set as the return type of the closure.
-
-8. For all patterns `xi`, for any part of the pattern `xi` where
+6. For all patterns `xi`, for any part of the pattern `xi` where
    the type is unknown, a unification variable `?Tij` is added to `Γc`.
+   Implied bounds for the patterns `xi` are added to `Γc`.
 
-9. Given the environments `Γc` and `Γa` (containing mappings of all captures),
+7. The return type of the closure is noted in `Γc` as `Tr` and implied bounds
+   are added to `Γc`. If `Tr` was not specified, a unification variable `?Tr`
+   is added to  `Γc` and set as the return type of the closure.
+
+8. Given the environments `Γc` and `Γa` (containing mappings of all captures),
    which are known not to have any shadowing due to 5.,
    unification of all variables `?Tr` and `?Tij` is
    attempted with the expression `body_expr`.
@@ -981,6 +978,9 @@ are taken:
    Additionally, during unification, additional constraints discovered
    for `body_expr` to be well formed may be added to `Γc`.
    These constraints may reference variables `Li` or `Pi`.
+
+9. `Γc` is checked to be a well formed typing environment. Given `Γc`,
+   the well-formedness of the return type and the types of `xi` are checked.
 
 10. Having unified with `body_expr`, all remaining unification variables in `Γc`
     are substituted for fresh variables in `Γc`.
@@ -1011,24 +1011,30 @@ In other words, this RFC has no impact on the dynamic semantics of Rust.
 # Drawbacks
 [drawbacks]: #drawbacks
 
-TODO
-
-- complexity
-
-- type inference decidability?
-
-TODO
+Generalizing closures and bounds to type variables adds some complexity to the
+type system. This is the main drawback of this proposal. However, some of that
+complexity, at least where users of the language are concerned, have already
+been paid for by the existing ability to quantify lifetimes in bounds, that is,
+the current ability to write `Foo: for<'a> Bar<'a>`.
 
 # Rationale and alternatives
 [rationale-and-alternatives]: #rationale-and-alternatives
 
+## Choice of syntax
+
+## Having `dyn for<T>` in the grammar
+
 TODO
 
-- motivate `dyn for<T>` in grammar.
+## On (un)decidability
 
-- implied bounds
+TODO
 
-- the combination features, independence, etc.
+## On implied bounds
+
+TODO
+
+## Why the current combination and not some subset?
 
 TODO
 
@@ -1054,13 +1060,10 @@ TODO
 # Unresolved questions
 [unresolved-questions]: #unresolved-questions
 
-1. Is the behavior with respect to implied bounds right?
+1. Is the behaviour with respect to implied bounds right?
 
-- forall c. c => c ? forbid it?
-- see https://ghc.haskell.org/trac/ghc/ticket/15316
-
-# Future work
-[future-work]: #future-work
+# Future possibilities
+[future-possibilities]: #future-possibilities
 
 ## Shorthand syntaxes `impl<T, ...>` and `dyn<'a, ...>`
 
@@ -1223,3 +1226,16 @@ where
 ```
 
 You could also use `( ... )` as the grouping mechanism instead of braces.
+
+As a final note, it might be possible that the interaction with trait aliases
+and with the proposed changes in the RFC permit reverse bounds.
+For example, consider:
+
+```rust
+trait Foo = where Bar: Into<Self>;
+
+fn foo_1<T: Foo>(arg: Bar) { ... }
+```
+
+For this to work, `Foo` must imply `Bar: Into<Self>` rather than having
+it as a precondition.
