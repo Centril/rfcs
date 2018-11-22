@@ -1,5 +1,5 @@
 - Feature Name: `fn_shorthand`
-- Start Date: 2018-11-21
+- Start Date: 2018-11-22
 - RFC PR: _
 - Rust Issue: _
 
@@ -12,19 +12,10 @@ In other words, the following becomes legal:
 ```rust
 fn double(x: u8) -> u8 = x * 2;
 
-/// Normalize a `meta: Meta` into the forms accepted in `#[proptest(<meta>)]`.
 fn normalize_meta(meta: Meta) -> Option<NormMeta> = Some(match meta {
     Meta::Word(_) => NormMeta::Plain,
     Meta::NameValue(nv) => NormMeta::Lit(nv.lit),
-    Meta::List(ml) => if let Some(nm) = util::match_singleton(ml.nested) {
-        match nm {
-            NestedMeta::Literal(lit) => NormMeta::Lit(lit),
-            NestedMeta::Meta(Meta::Word(word)) => NormMeta::Word(word),
-            _ => return None
-        }
-    } else {
-        return None
-    },
+    Meta::List(ml) => { /* more code, elided for brevity */ },
 });
 ```
 
@@ -38,8 +29,7 @@ As we have seen in the [summary], by permitting the user to write
 While this is just one level of indent, it does not take many levels
 (particularly if you restrict yourself to 80 characters, but also with 100) to
 push the code outside of the text area of an editor. By removing that first
-initial step in some cases we can reduce the drift in many cases and thus
-improve readability.
+initial step we can reduce the drift in many cases and thus improve readability.
 
 ### Real world use cases
 
@@ -75,32 +65,23 @@ pub fn github_webhook(event: Event) -> DashResult<()> = try {
     let conn = &*DB_POOL.get()?;
 
     match event.payload {
-        Payload::Issues(issue_event) =>
-            handle_issue(conn, issue_event.issue, &issue_event.repository.full_name)?,
-        Payload::PullRequest(pr_event) =>
-            handle_pr(conn, pr_event.pull_request, &pr_event.repository.full_name)?,
-        Payload::IssueComment(comment_event) => if comment_event.action != "deleted" {
-            handle_issue(
-                conn,
-                comment_event.issue,
-                &comment_event.repository.full_name,
-            )?;
-            handle_comment(
-                conn,
-                comment_event.comment,
-                &comment_event.repository.full_name,
-            )?;
-        },
-        Payload::Unsupported => (),
+        Payload::Issues(issue_event) => { /* logic... */ },
+        Payload::PullRequest(pr_event) => { /* logic... */ },
+        Payload::IssueComment(comment_event) => { /* logic... */ },
     }
 
     // Notice the lack of `Ok(())` because of `try { .. }`.
 };
 ```
 
+This becomes a cheap way to starve off some of the needs for a `try fn` construct.
+
 ### In the standard library
 
-One instance of this is in `src/core/iter/mod.rs`. For example:
+As this is a language changes that is quite widely and generally applicable,
+enumerating all the places where it would apply would be unfeasible.
+However, one instance of where it applies frequently is in `src/core/iter/mod.rs`.
+For example:
 
 ```rust
 impl<I: Iterator> Iterator for Peekable<I> {
@@ -133,6 +114,16 @@ turn can in many cases improve readability as it becomes easier to define self
 contained units that respect the *[single responsibility principle (SRP)][SRP]*,
 *[separation of concerns (SoC)][SoC]* or *modularity* in general.
 
+## Embracing the expression oriented nature
+
+[expr_oriented]: https://doc.rust-lang.org/book/first-edition/glossary.html#expression-oriented-language
+
+As the book tells us, [Rust is an expression-oriented language][expr_oriented].
+Therefore it is somewhat peculiar that one of the most important parts
+of the language, the function definition body, is not an expression as
+in other expression oriented languages (see the [prior-art]).
+In this RFC, we make the function body into an expression.
+
 ## A more syntactically unified feeling
 
 Finally, a rather minor motivation, which still bears mentioning, is
@@ -147,8 +138,6 @@ const FOO: Bar = make_bar();
 
 fn baz() -> Quux = make_quux();
 ```
-
-Why are we doing this? What use cases does it support? What is the expected outcome?
 
 # Guide-level explanation
 [guide-level-explanation]: #guide-level-explanation
@@ -221,7 +210,7 @@ fn baz(quux: usize) -> &'static str = match quux % 3 {
 
 The static and dynamic semantics of the `= $expr` form is equivalent
 in all respects to that of `{ $expr }`. Conversely the existing form
-`{ $stmt* $tail_expr }` is equivalent to `= { $stmt* $tail_expr }`.
+`{ $stmt* $tail_expr }` is equivalent to `= { $stmt* $tail_expr };`.
 
 # Drawbacks
 [drawbacks]: #drawbacks
@@ -249,6 +238,13 @@ bindings more closely together. Since these use `=`, we use that instead
 of `=>`. Furthermore, the precedent in other languages for using `=`
 is also stronger than for the alternative.
 
+Another reason to use `=` instead of `=>` is that the syntax `=>` too closely
+resembles the preceding function arrow `->`. For example:
+
+```rust
+pub fn self_ty() -> syn::Type => parse_quote!(Self);
+```
+
 ## Expression oriented languages
 
 In our survey in the [prior-art], we note that it is quite common for expression
@@ -267,14 +263,33 @@ in power such that certain previously inexpressible things now become expressibl
 The benefits to ergonomics are however pervasive as this impacts a central
 piece of the language rather than some syntax in the periphery.
 
+## Changing the formatting as an alternative
+
+As an alternative to a language change, we could simply change the formatting
+so as to write:
+
+```rust
+fn eval_expr(expr: &Expr) -> Option<u128> { match expr {
+    Expr::Lit(expr) => eval_lit(expr),
+    Expr::Binary(expr) => eval_binary(expr),
+    Expr::Unary(expr) => eval_unary(expr),
+    Expr::Paren(expr) => eval_expr(&expr.expr),
+    Expr::Group(expr) => eval_expr(&expr.expr),
+    _ => None,
+} }
+```
+
+While the compiler would be fine with this, it subjectively does not look good as
+we end up with `} }` at the end and it seems unnatural to write `{ match expr {`.
+
 # Prior art
 [prior-art]: #prior-art
 
 There are a number of languages which support the equational `=` style of
 defining functions.
 
-For the sake of simplicity, we'll use the identity function as our running
-example to facilitate comparisons.
+For the sake of simplicity, we'll primarily use the identity function as our
+running example to facilitate comparisons.
 
 ## Functional Languages
 
@@ -294,12 +309,15 @@ identity x = x
 Optionally, you can also write a type annotation; In Haskell this is:
 
 ```haskell
-identity :: a -> a
+identity :: Int -> Int
 identity x = x
 ```
 
 Meanwhile, in Idris and Agda you must write the type annotation due to the
 lack of global type inference.
+
+Something to note in these examples is that `;` is not needed in Haskell
+since it is a language that uses layout syntax.
 
 ### The ML family
 
@@ -359,7 +377,7 @@ def sum(ls: List[String]): Int = {
 
 ### Kotlin
 
-A language which is even more interesting than Scala is Kotlin.
+A language which is even more interesting here than Scala is Kotlin.
 
 The standard way to define the identity function is:
 
@@ -369,7 +387,7 @@ fun <T> identity(x: T): T = x
 
 The syntax is reminiscent of a mix between Java and Scala.
 Notice that the `=` syntax is supported, but only when the body of the
-function is a single expression.
+function is a single expression as in this RFC.
 
 Like Rust, the language also supports the braced variants when so desired:
 
@@ -415,6 +433,38 @@ decisions based on experimentation.
 # Future possibilities
 [future-possibilities]: #future-possibilities
 
-## `LambdaCase`
+## Eliding the semicolon
 
-TODO
+In this RFC we require that a semi-colon (`;`) should follow the single
+expression that follows `=`. This restriction exists to ensure that we do
+not run into any ambiguities. In some cases, it would be feasible to
+relax this restriction. For example, we could permit:
+
+```rust
+fn foo() = {
+    alpha();
+    beta();
+} // no semicolon
+```
+
+```rust
+fn foo() = loop { // or `try`, `async`, `unsafe`, `match`, `if`, `while`, ...
+    ...
+} // no semicolon
+```
+
+This is possible since the closing brace (`}`) deals with the ambiguity for us.
+However, this would not be consistent with the syntax in `const` and `static`
+items and ostensibly `type` items as well. If we want to further relax the
+syntax of `fn` bodies to not require `;` in some cases, then we should do it
+for the other items as well. For example:
+
+```rust
+const FOO: u8 = { /* non-trivial logic */ } // <-- no semicolon
+
+type Bar = { type Baz = ComplexTypeExpression; Vec<Baz> } // <-- no semi
+        // ^-- we would additionally need to allow {} --^
+```
+
+However, to keep this proposal more contained we have elected to start
+with a more conservative approach.
