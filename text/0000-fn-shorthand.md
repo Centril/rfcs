@@ -208,6 +208,15 @@ fn baz(quux: usize) -> &'static str = match quux % 3 {
 };
 ```
 
+With a `where` clause:
+
+```rust
+fn size_of_ptr<T>() -> usize 
+where 
+    T: ?Sized,
+= mem::size_of::<*const T>();
+```
+
 The static and dynamic semantics of the `= $expr` form is equivalent
 in all respects to that of `{ $expr }`. Conversely the existing form
 `{ $stmt* $tail_expr }` is equivalent to `= { $stmt* $tail_expr };`.
