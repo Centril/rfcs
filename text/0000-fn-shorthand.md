@@ -455,15 +455,13 @@ fn foo() = loop { // or `try`, `async`, `unsafe`, `match`, `if`, `while`, ...
 
 This is possible since the closing brace (`}`) deals with the ambiguity for us.
 However, this would not be consistent with the syntax in `const` and `static`
-items and ostensibly `type` items as well. If we want to further relax the
-syntax of `fn` bodies to not require `;` in some cases, then we should do it
-for the other items as well. For example:
+items. If we want to further relax the syntax of `fn` bodies to not require `;`
+in some cases, then we should do it for the other items as well. For example:
 
 ```rust
 const FOO: u8 = { /* non-trivial logic */ } // <-- no semicolon
 
-type Bar = { type Baz = ComplexTypeExpression; Vec<Baz> } // <-- no semi
-        // ^-- we would additionally need to allow {} --^
+static FOO: u8 = { /* logic */ } // <-- no semicolon
 ```
 
 However, to keep this proposal more contained we have elected to start
