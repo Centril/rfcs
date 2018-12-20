@@ -118,6 +118,23 @@ let foo = Foo {
 let foo = Foo { .. };
 ```
 
+This can be useful when implementing `Default` doesn't make sense and
+where many fields have defaults but one does not. For example:
+
+```rust
+struct LaunchCommand {
+    cmd: String,
+    args: Vec<String> = vec![],
+    some_special_setting: Option<FancyConfig> = None,
+    setting_most_people_will_ignore: Option<FlyMeToTheMoon> = None,
+}
+```
+
+Here, it is not sensible to give `cmd` a default since all cases would need
+to customize the field and thus `Default` shouldn't be implemented.
+However, it does make sense to default at least the latter two fields
+since the `None` value's fit most use cases.
+
 ### `PhantomData` ergonomics
 
 [nomicon]: https://doc.rust-lang.org/nightly/nomicon/phantom-data.html
@@ -254,7 +271,7 @@ used in many more circumstances and thus boilerplate is further reduced.
 
 Currently, `#[derive(Default)]` is not usable for `enum`s. To rectify this
 situation and to allow enum variants to take advantage of their newfound
-ability to have default field values, a `#[default]` attribute is introduce
+ability to have default field values, a `#[default]` attribute is introduced
 that can be attached to variants. This allows you to use `#[derive(Default)]`
 on enums wherefore you can now write:
 
@@ -289,6 +306,11 @@ enum FileFavor {
     Union,
 }
 ```
+
+Note that while `#[default]` makes field defaults more useful and is useful
+on its own, it is technically orthogonal in that it can be extracted out of
+this RFC if need be. However, since it completes the picture, it is proposed
+together with field defaults.
 
 ## Clearer documentation and more local reasoning
 
@@ -381,34 +403,6 @@ struct Lorem {
 }
 ```
 
-### `proptest_derive`
-
-The yet to be released `#[derive(Arbitrary)]` custom derive macro also has a
-notion of defaults; for example, you may write:
-
-```rust
-#[derive(Debug, Arbitrary)]
-struct Foo {
-    bar: usize,
-    #[proptest(value = "42")]
-    baz: usize,
-}
-```
-
-This will generate random `usize`s for `bar` and fix the value of `baz` to `42`.
-One could instead imagine writing:
-
-```rust
-#[derive(Debug, Arbitrary)]
-struct Foo {
-    bar: usize,
-    #[proptest(default)]
-    baz: usize = 42,
-}
-```
-
-This would then fix the value of `baz` to `42`.
-
 ### Conclusion
 
 As seen in the previous sections, rather than make deriving `Default`
@@ -484,35 +478,35 @@ will be generated for you.
 ## More fields
 
 As you saw in the [summary], you are not limited to a single field and all
-fields need not have any defaults associated with them. Instead, you can
-freely mix and match (7):
+fields need not have any defaults associated with them. Instead, you can freely
+mix and match. Given the definition of `LaunchCommand` from the [motivation] (7):
 
 ```rust
-#[derive(Default)]
-struct ExprType {
-    expr: Box<Expr>,
-    ty: Box<Ty>
-    attrs: Vec<Attribute> = Vec::new(),
+struct LaunchCommand {
+    cmd: String,
+    args: Vec<String> = vec![],
+    some_special_setting: Option<FancyConfig> = None,
+    setting_most_people_will_ignore: Option<FlyMeToTheMoon> = None,
 }
 ```
 
-Given this definition, you can omit `attrs` and `color_token` (8):
+you can omit all fields but `cmd` (8):
 
 ```rust
-let ascribe = ExprType { expr: make_expr(), ty: make_type(), .. };
+let ls_cmd = LaunchCommand {
+    cmd: "ls".to_string(),
+};
 ```
 
-You can also elect to override the provided default (9):
+You can also elect to override the provided defaults (9):
 
 ```rust
-let ascribe = ExprType {
-    attr: vec![
-        parse_quote!(#[allow(unused_parens)]),
-        parse_quote!(#[deny(other_lint)]),
-    ],
-    expr: parse_quote!((1 + 2)),
-    ty: parse_quote!(u8),
-}
+let ls_cmd2 = LaunchCommand {
+    cmd: "ls".to_string(),
+    args: vec!["-lah".to_string()],
+    some_special_setting: make_special_setting(),
+    // setting_most_people_will_ignore is still defaulted.
+};
 ```
 
 ## Default fields values are [`const` context]s
@@ -1538,7 +1532,38 @@ this RFC so that constructor functions are regained if so desired.
 # Unresolved questions
 [unresolved-questions]: #unresolved-questions
 
-None.
+1. What is the right interaction wrt. `#[non_exhaustive]`?
+
+   In particular, if given the following definition:
+
+   ```rust
+   #[non_exhaustive]
+   pub struct Config {
+       pub height: u32,
+       pub width: u32,
+   }
+   ```
+
+   it is possible to construct a `Config` like so:
+
+   ```rust
+   let config = Config { width: 640, height: 480, .. };
+   ```
+
+   then adding a field to `Config` can only happen iff that field
+   is provided a default value.
+
+   This arrangement, while diminishing the usefulness of `#[non_exhaustive]`,
+   makes the ruleset of the language simpler, more consistent, and also
+   simplifies type checking as `#[non_exhaustive]` is entirely ignored
+   when checking `Foo { fields, .. }` expressions.
+
+   As an alternative, users who desire the semantics described above can
+   omit `#[non_exhaustive]` from their type and instead add a private
+   defaulted field that has a ZST.
+
+   Resolving this question may be deferred to stabilization of either
+   `#[non_exhaustive]` or field defaults, whichever comes last.
 
 # Future possibilities
 [future-possibilities]: #future-possibilities
