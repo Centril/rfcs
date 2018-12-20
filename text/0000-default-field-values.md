@@ -14,13 +14,13 @@ When deriving `Default`, the provided values will then be used. For example:
 #[derive(Default)]
 struct ExprType {
     expr: Box<Expr>,
-    ty: Box<Ty>
+    ty: Box<Ty>,
     attrs: Vec<Attribute> = Vec::new(),
 }
 ```
 
-An attribute `#[default]` is also introduced which can be used on `enum`
-variants thereby allowing enums to work with `#[derive(Default)]`.
+An attribute `#[default]`, usable on `enum` variants, is also introduced,
+thereby allowing enums to work with `#[derive(Default)]`.
 
 ```rust
 #[derive(Default)]
@@ -45,12 +45,14 @@ let field = Expr::Field { base, member, .. };
 
 ### For `struct`s
 
+[FRU]: https://doc.rust-lang.org/1.31.0/book/ch05-01-defining-structs.html#creating-instances-from-other-instances-with-struct-update-syntax
+
 Rust allows you to create an instance of a `struct` using the struct literal
 syntax `Foo { bar: expr, baz: expr }`. To do so, all fields in the `struct`
 must be assigned a value. This makes it inconvenient to create large `struct`s
 whose fields usually receive the same values. Struct literals also cannot be
 used to initialize `struct`s with fields which are inaccessible due to privacy.
-*Functional record updates (FRU)* can reduce noise when a `struct` derives
+*[Functional record updates (FRU)][FRU]* can reduce noise when a `struct` derives
 `Default`, but are also invalid when the `struct` has inaccessible fields.
 
 To work around these shortcomings, you can create constructor functions:
@@ -482,7 +484,7 @@ will be generated for you.
 ## More fields
 
 As you saw in the [summary], you are not limited to a single field and all
-fields must not have any defaults associated with them. Instead, you can
+fields need not have any defaults associated with them. Instead, you can
 freely mix and match (7):
 
 ```rust
@@ -546,7 +548,7 @@ deterministic compilation.
 ## Privacy interactions
 
 In examples thus far, initialization literal expressions `Foo { bar, .. }` have
-been used in the same module as where the type constructed was defined in.
+been used in the same module as where the constructed type was defined in.
 
 Let's now consider a scenario where this is not the case (11):
 
@@ -752,7 +754,7 @@ When lints check attributes such as `#[allow(lint_name)]` are placed on a
 
 #### Initialization expressions
 
-Given an expression `τ` of form (e.g. `Foo { x: 1, .. }`):
+Given an expression `τ` of the form (e.g. `Foo { x: 1, .. }`):
 
 ```rust
 path:Path "{" attrs:InnerAttr* fields:StructExprField+ % "," "," ".." "}"
@@ -791,7 +793,7 @@ values. Since there are no explicitly provided fields, by Lemma 1 it holds.
 
 ### Dynamic semantics
 
-Given a well-formed expression `τ` according to the form aforementioned,
+Given a well-formed expression `τ` according to the aforementioned form,
 the operational semantics is the same as the semantics of an expression
 `path { new_fields }` with `new_fields = fields ∪ default_fields` where:
 
@@ -848,7 +850,7 @@ existing pattern syntax. This makes the addition of `Foo { .. }` at worst
 low-cost and potentially cost-free.
 
 The main complexity comes instead from introducing `field: Type = expr`.
-However, as seen in the [prior-art], there are several widely used languages
+However, as seen in the [prior-art], there are several widely-used languages
 that have a notion of field / property / instance-variable defaults.
 Therefore, the addition is intuitive and thus the cost is seen as limited.
 
@@ -1080,8 +1082,8 @@ any of the [motivation] set out, the former does to a small extent.
 In particular, `Foo { .. }` as sugar slightly improves ergonomics.
 However, it has some notable problems:
 
-+ Because it desugars to `Foo { ..Default::default() }` it cannot be required
-  that the expression is a constant one; This carries all the problems noted in
++ Because it desugars to `Foo { ..Default::default() }`, it cannot be required
+  that the expression is a constant one. This carries all the problems noted in
   the previous section on why default field values should be a `const` context.
 
 + It provides zero improvements to the ergonomics of *specifying* defaults,
@@ -1217,8 +1219,8 @@ values because both languages have no means of preventing the effects.
 
 ### C#
 
-Another language with defaults in the OO list is C#.
-The behaviour similar to Java:
+Another language with defaults of the object-oriented variety is C#.
+The is behaviour similar to Java:
 
 ```csharp
 class Foo {
@@ -1228,7 +1230,7 @@ class Foo {
 
 ### C++
 
-Another language in the object oriented family is C++. It also affords default
+Another language in the object-oriented family is C++. It also affords default
 values like so:
 
 ```cpp
@@ -1263,7 +1265,7 @@ requirement is placed on default field values.
 
 [Swift]: https://docs.swift.org/swift-book/LanguageGuide/Initialization.html
 
-A language which is closer to Rust is [Swift] and it allows for default values:
+A language which is closer to Rust is [Swift], and it allows for default values:
 
 ```swift
 struct Person {
@@ -1499,7 +1501,7 @@ and `#[new(default)]` are used to provide values that are then omitted
 from the respective constructor functions that are generated.
 
 If you transcribe the above snippet as much as possible to the system proposed
-in this RFC you would get:
+in this RFC, you would get:
 
 ```rust
 struct Foo {
