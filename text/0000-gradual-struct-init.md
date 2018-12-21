@@ -18,6 +18,20 @@ pt.y = 24;
 drop(pt);
 ```
 
+Additionally, initialized fields of a struct may be referenced by other fields
+rendering the struct immovable. For example:
+
+```rust
+struct Foo<'a> { a: u8, b: &'a u8 }
+
+let f;
+f.a = 42;
+f.b = &f.a;
+
+// drop(f);
+// ------- not allowed since this moves `f` into `drop`.
+```
+
 # Motivation
 [motivation]: #motivation
 
