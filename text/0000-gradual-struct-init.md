@@ -726,7 +726,9 @@ None to our knowledge.
 
    If we do however allow `Drop` types to be gradually initialized,
    then we should also lift the restriction on moving out of `Drop`
-   types to make things consistent.
+   types to make things consistent. If that restriction is not removed,
+   it would be to not allow gradual initialization of `Drop` types
+   as well for consistency.
 
    If we want to allow `Drop` types, then the restriction in 1.
    is helpful because there's less to track in your head.
