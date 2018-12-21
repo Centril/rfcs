@@ -270,7 +270,8 @@ if random_bool() {
 consume(foo); // ERROR! `foo.qux` not initialized in `else { .. }`.
 ```
 
-The general condition here is that all fields must be *definitely initialized*.
+The general condition here is that all fields must be *definitely initialized*
+using the same logic for determining definite initialization as for local fields.
 
 ### Partial initialization and referencing fields
 
@@ -611,6 +612,9 @@ This means that:
 5. before `p` goes out of scope, `p` must have been definitively initialized
    at some point at least once.
 
+In all cases, definitive initialization of fields are checked in the same
+manner as for local fields prior to this RFC.
+
 # Drawbacks
 [drawbacks]: #drawbacks
 
@@ -738,7 +742,7 @@ None to our knowledge.
 
 [RFC 2534]: https://github.com/rust-lang/rfcs/pull/2534
 
-Partially initialized objects is not exposed to the user in the type system.
+Partially initialized objects are not exposed to the user in the type system.
 We could allow this with `&uninit T` references. That would allow uninitialized
 fields to pass into functions which can then initialize them.
 See [RFC 2534] for a discussion on `&uninit T`.
