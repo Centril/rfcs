@@ -220,8 +220,8 @@ For a large enum which for example encodes an expression language such
 this could become quite a lot of variants.
 
 By allowing each individual variant of an `enum` to have default values,
-a more profound can achieve a more profound improvement to ergonomics
-than for `struct`s. For example, you may write:
+more profound improvements to ergonomics than for `struct`s can be achieved.
+For example, you may write:
 
 ```rust
 enum Foo<'a> {
