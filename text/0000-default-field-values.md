@@ -138,6 +138,7 @@ since the `None` value's fit most use cases.
 ### `PhantomData` ergonomics
 
 [nomicon]: https://doc.rust-lang.org/nightly/nomicon/phantom-data.html
+[PhantomData]: https://doc.rust-lang.org/stable/std/marker/struct.PhantomData.html
 
 Say that you want to define our own `Vec<T>` type. As the [nomicon] says,
 you need to use [PhantomData] to make sure that drop-checking is sound like so:
